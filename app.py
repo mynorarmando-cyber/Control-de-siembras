@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 st.set_page_config(
     page_title="Matriz Agrícola Interactiva",
@@ -97,15 +97,14 @@ with tab_matriz:
 
     st.subheader("📋 Matriz Semanal de Entrada (Doble clic en una celda para elegir el vegetal)")
 
-    # Renderizado seguro de AgGrid
+    # Renderizado compatible con versiones nuevas de st-aggrid
     grid_response = AgGrid(
         df_trabajo,
         gridOptions=grid_options,
         update_mode=GridUpdateMode.VALUE_CHANGED,
-        data_return_mode="ALWAYS",
+        data_return_mode=DataReturnMode.ALWAYS,
         fit_columns_on_grid_load=False,
-        height=250,
-        theme='balham'
+        height=260
     )
 
     # Actualizar estado global con los datos editados
