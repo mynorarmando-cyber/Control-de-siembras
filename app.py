@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
 st.set_page_config(
     page_title="Matriz Agrícola Interactiva",
@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 st.title("🌾 Matriz Semanal de Planificación Agrícola")
-st.caption("Selecciona el vegetal directamente desde el menú desplegable en la semana donde iniciará la siembra. Toda la curva se calculará automáticamente abajo.")
+st.caption("Selecciona el vegetal en la semana de inicio. La tabla resaltará automáticamente el ciclo activo y marcará en rojo si hay solapamiento de cultivos.")
 
 # ---------------------------------------------------------
 # 1. PARÁMETROS DE CULTIVOS Y CURVAS DE COSECHA
@@ -77,12 +77,35 @@ with tab_matriz:
     gb = GridOptionsBuilder.from_dataframe(df_trabajo)
     gb.configure_default_column(editable=True, groupable=True)
 
-    # Fijar columnas informativas a la izquierda
-    gb.configure_column("Finca", editable=False, pinned="left", width=90)
-    gb.configure_column("Lote", editable=False, pinned="left", width=100)
-    gb.configure_column("Área (Ha)", editable=False, pinned="left", width=100)
+    # Fijar columnas informativas a la izquierda con buen ancho
+    gb.configure_column("Finca", editable=False, pinned="left", width=100)
+    gb.configure_column("Lote", editable=False, pinned="left", width=110)
+    gb.configure_column("Área (Ha)", editable=False, pinned="left", width=110)
 
-    # Configurar columnas S1-S52 con menú desplegable de vegetales
+    # Código JS para colorear celdas según estado del ciclo o conflicto (Rojo)
+    cell_style_js = JsCode("""
+    function(params) {
+        if (!params.value) return null;
+        var val = params.value.toString();
+        
+        if (val.includes("🔴") || val.includes("CHOQUE")) {
+            return {'backgroundColor': '#fee2e2', 'color': '#991b1b', 'fontWeight': 'bold'};
+        } else if (val.includes("🌱")) {
+            return {'backgroundColor': '#dcfce7', 'color': '#166534', 'fontWeight': 'bold'};
+        } else if (val.includes("🟢")) {
+            return {'backgroundColor': '#bbf7d0', 'color': '#14532d', 'fontWeight': 'bold'};
+        } else if (val.includes("▫️")) {
+            return {'backgroundColor': '#f3f4f6', 'color': '#374151'};
+        } else if (val.includes("🧹")) {
+            return {'backgroundColor': '#fef3c7', 'color': '#92400e'};
+        } else if (val.length > 0) {
+            return {'backgroundColor': '#e0e7ff', 'color': '#3730a3', 'fontWeight': 'bold'};
+        }
+        return null;
+    }
+    """)
+
+    # Configurar columnas S1-S52 MÁS ANCHAS (width=110)
     opciones_vegetales = [""] + list(st.session_state['vegetales_db'].keys())
 
     for s in range(1, 53):
@@ -90,23 +113,25 @@ with tab_matriz:
             f"S{s}",
             cellEditor='agSelectCellEditor',
             cellEditorParams={'values': opciones_vegetales},
-            width=85
+            width=110,  # <--- Hacemos las celdas más anchas y legibles
+            cellStyle=cell_style_js
         )
 
     grid_options = gb.build()
 
-    st.subheader("📋 Matriz Semanal de Entrada (Doble clic en una celda para elegir el vegetal)")
+    st.subheader("📋 Matriz Semanal de Entrada (Semanas ampliadas)")
 
-    # Renderizado simplificado y 100% compatible
+    # Renderizar AgGrid con altura mayor para trabajar cómodamente
     grid_response = AgGrid(
         df_trabajo,
         gridOptions=grid_options,
         update_mode=GridUpdateMode.VALUE_CHANGED,
+        allow_unsafe_jscode=True,  # <--- Habilita los estilos visuales JS
         fit_columns_on_grid_load=False,
-        height=260
+        height=320
     )
 
-    # Actualizar estado global con los datos editados
+    # Actualizar estado global
     df_actualizado = pd.DataFrame(grid_response['data'])
     st.session_state['matriz_entrada'] = df_actualizado
 
@@ -170,12 +195,31 @@ with tab_matriz:
     st.divider()
 
     if conflictos:
-        st.error("🚨 **CONFLICTOS DETECTADOS EN LA PROGRAMACIÓN:**")
+        st.error("🚨 **CONFLICTOS DETECTADOS EN LA PROGRAMACIÓN (SOLAPAMIENTO):**")
         for c in set(conflictos):
             st.warning(c)
 
     st.subheader("🖼️ Vista Calculada: Ciclos y Cosechas Proyectadas")
-    st.dataframe(df_matriz_calculada, use_container_width=True, height=250)
+    
+    # Aplicar formato de color también a la vista de resultado calculada
+    def colorear_matriz_calculada(val):
+        if "🔴" in str(val):
+            return 'background-color: #fee2e2; color: #991b1b; font-weight: bold;'
+        elif "🌱" in str(val):
+            return 'background-color: #dcfce7; color: #166534; font-weight: bold;'
+        elif "🟢" in str(val):
+            return 'background-color: #bbf7d0; color: #14532d; font-weight: bold;'
+        elif "🧹" in str(val):
+            return 'background-color: #fef3c7; color: #92400e;'
+        elif "▫️" in str(val):
+            return 'background-color: #f3f4f6; color: #374151;'
+        return ''
+
+    st.dataframe(
+        df_matriz_calculada.style.map(colorear_matriz_calculada),
+        use_container_width=True,
+        height=300
+    )
 
     # ---------------------------------------------------------
     # GRÁFICA DE LA CURVA CONSOLIDADA
