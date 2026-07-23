@@ -4,37 +4,57 @@ import numpy as np
 import plotly.express as px
 
 st.set_page_config(
-    page_title="Planificación Agrícola y Control de Siembras",
+    page_title="Planificación Agrícola y Curvas de Cosecha",
     page_icon="🌾",
     layout="wide"
 )
 
-# Estilos visuales
+# Estilos CSS
 st.markdown("""
     <style>
     .main-header { font-size: 26px; font-weight: bold; color: #1E3A8A; margin-bottom: 5px; }
-    .sub-header { font-size: 15px; color: #4B5563; margin-bottom: 15px; }
     .alert-box { background-color: #FEE2E2; border-left: 5px solid #EF4444; padding: 10px; margin-bottom: 10px; border-radius: 4px; color: #991B1B; }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">🌾 Sistema de Planificación y Control de Siembras / Cosechas</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🌾 Sistema de Planificación Agrícola y Curvas de Cosecha</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 1. ESTADO DE SESIÓN (DATOS DINÁMICOS EDITABLES)
+# 1. PARÁMETROS Y CATALOGOS (CONFIGURACIÓN)
 # ---------------------------------------------------------
 
-# Catalog de Vegetales y Ciclos
+# Curvas de Distribución de Cosecha (% de cosecha por semana del ciclo)
 if 'vegetales_config' not in st.session_state:
     st.session_state['vegetales_config'] = {
-        'Ejote Fino': {'duracion_total': 11, 'descanso_post': 3, 'cosechas': {10: 0.35, 11: 0.42, 12: 0.23}},
-        'Broccoli': {'duracion_total': 16, 'descanso_post': 3, 'cosechas': {10: 0.105, 11: 0.21, 12: 0.1785, 13: 0.105, 14: 0.2415, 15: 0.21}},
-        'Grano': {'duracion_total': 13, 'descanso_post': 3, 'cosechas': {11: 0.2446, 12: 0.2935, 13: 0.1957, 14: 0.0815}},
-        'China': {'duracion_total': 13, 'descanso_post': 3, 'cosechas': {10: 0.0946, 11: 0.3870, 12: 0.3182, 13: 0.0602}},
-        'Dulce': {'duracion_total': 14, 'descanso_post': 3, 'cosechas': {11: 0.0882, 12: 0.1764, 13: 0.3616, 14: 0.2558}}
+        'Ejote Fino': {
+            'duracion_total': 11,
+            'descanso_post': 3,
+            # Cosecha en semanas 10, 11 y 12 del ciclo (35%, 42%, 23%)
+            'cosechas': {10: 0.35, 11: 0.42, 12: 0.23}
+        },
+        'Broccoli': {
+            'duracion_total': 16,
+            'descanso_post': 3,
+            'cosechas': {10: 0.105, 11: 0.21, 12: 0.1785, 13: 0.105, 14: 0.2415, 15: 0.21}
+        },
+        'Grano': {
+            'duracion_total': 13,
+            'descanso_post': 3,
+            'cosechas': {11: 0.2446, 12: 0.2935, 13: 0.1957, 14: 0.0815}
+        },
+        'China': {
+            'duracion_total': 13,
+            'descanso_post': 3,
+            'cosechas': {10: 0.0946, 11: 0.3870, 12: 0.3182, 13: 0.0602}
+        },
+        'Dulce': {
+            'duracion_total': 14,
+            'descanso_post': 3,
+            'cosechas': {11: 0.0882, 12: 0.1764, 13: 0.3616, 14: 0.2558}
+        }
     }
 
-# Catálogo de Fincas y Lotes
+# Catálogo de Lotes
 if 'lotes_db' not in st.session_state:
     st.session_state['lotes_db'] = pd.DataFrame([
         {'Finca': 'TM', 'Lote': '1', 'Area_Ha': 1.05},
@@ -47,15 +67,16 @@ if 'lotes_db' not in st.session_state:
         {'Finca': 'SM', 'Lote': 'SM-17', 'Area_Ha': 1.16}
     ])
 
-# Registros de Planificación
+# Registro de Siembras Planificadas
 if 'planificaciones' not in st.session_state:
     st.session_state['planificaciones'] = [
         {'Finca': 'TM', 'Lote': '1', 'Vegetal': 'Ejote Fino', 'Semana_Siembra': 1},
-        {'Finca': 'TM', 'Lote': '1', 'Vegetal': 'Broccoli', 'Semana_Siembra': 15}, # Segunda siembra
-        {'Finca': 'NP', 'Lote': 'NP-1', 'Vegetal': 'Ejote Fino', 'Semana_Siembra': 5},
+        {'Finca': 'NP', 'Lote': 'NP-1', 'Vegetal': 'Ejote Fino', 'Semana_Siembra': 3},
+        {'Finca': 'TM', 'Lote': '2', 'Vegetal': 'Ejote Fino', 'Semana_Siembra': 5},
+        {'Finca': 'CH', 'Lote': 'CH-8', 'Vegetal': 'Broccoli', 'Semana_Siembra': 2},
     ]
 
-# Rendimientos Base por Semana
+# Rendimiento Base Esperado (Kg / Ha) según la semana del año
 @st.cache_data
 def get_rendimiento_base():
     rend_data = []
@@ -71,185 +92,191 @@ def get_rendimiento_base():
 df_rend_base = get_rendimiento_base()
 
 # ---------------------------------------------------------
-# 2. MENÚ NAVEGACIÓN Y PESTAÑAS
+# 2. MOTOR DE CÁLCULO DE PRODUCCIÓN Y OCUPACIÓN
 # ---------------------------------------------------------
-st.sidebar.title("Navegación")
-opcion = st.sidebar.radio("Ir a:", [
-    "📋 Pestaña Planificación (Matriz Semanal)",
-    "➕ Registrar / Editar Siembra",
-    "⚙️ Configuración (Vegetales, Lotes y Fincas)"
-])
-
-# ---------------------------------------------------------
-# OPCIÓN 1: PESTAÑA PLANIFICACIÓN (ESTILO EXCEL) CON DETECCIÓN DE CONFLICTOS
-# ---------------------------------------------------------
-if opcion == "📋 Pestaña Planificación (Matriz Semanal)":
-    st.subheader("📋 Matriz de Planificación de Siembras (Semanas 1 a 52)")
-    
-    # Evaluar Solapamientos y Ocupación
+def calcular_matrices():
     lotes_df = st.session_state['lotes_db']
     veg_config = st.session_state['vegetales_config']
+    plans = st.session_state['planificaciones']
     
-    # Crear estructura matriz: Finca, Lote, Area_Ha, Sem1 ... Sem52
-    matriz_dict = []
+    prod_registros = []
+    matriz_ocupacion = []
     conflictos = []
     
     for idx, row in lotes_df.iterrows():
         finca, lote, area = row['Finca'], row['Lote'], row['Area_Ha']
-        fila = {'Finca': finca, 'Lote': lote, 'Área (Ha)': area}
         
-        # Inicializar semanas vacías
-        semanas_ocupacion = {s: "" for s in range(1, 53)}
-        semanas_duplicadas = {s: 0 for s in range(1, 53)}
+        # Estructura para la tabla estilo Excel
+        fila_matriz = {'Finca': finca, 'Lote': lote, 'Área (Ha)': area}
+        semanas_texto = {s: "" for s in range(1, 53)}
+        semanas_conteo = {s: 0 for s in range(1, 53)}
         
-        # Filtrar planificaciones para este lote
-        plans_lote = [p for p in st.session_state['planificaciones'] if p['Finca'] == finca and p['Lote'] == lote]
+        plans_lote = [p for p in plans if p['Finca'] == finca and p['Lote'] == lote]
         
         for p in plans_lote:
             veg = p['Vegetal']
             sem_i = p['Semana_Siembra']
-            duracion = veg_config.get(veg, {}).get('duracion_total', 12) + veg_config.get(veg, {}).get('descanso_post', 0)
+            cfg = veg_config.get(veg, {'duracion_total': 12, 'descanso_post': 3, 'cosechas': {}})
             
-            for s in range(sem_i, min(sem_i + duracion, 53)):
-                semanas_duplicadas[s] += 1
-                if semanas_ocupacion[s] == "":
-                    semanas_ocupacion[s] = f"{veg}"
+            duracion_total_ocupada = cfg['duracion_total'] + cfg['descanso_post']
+            
+            # 1. Mapear ocupación en la matriz
+            for s in range(sem_i, min(sem_i + duracion_total_ocupada, 53)):
+                semanas_conteo[s] += 1
+                if semanas_texto[s] == "":
+                    semanas_texto[s] = f"{veg}"
                 else:
-                    semanas_ocupacion[s] += f" / {veg}"
+                    semanas_texto[s] += f" / {veg}"
+            
+            # 2. Calcular producción según la curva del cultivo
+            for sem_relativa, pct in cfg['cosechas'].items():
+                sem_cosecha_real = sem_i + (sem_relativa - 1)
+                if sem_cosecha_real <= 52:
+                    # Obtener rendimiento base para esa semana del año
+                    r_row = df_rend_base[df_rend_base['Semana'] == sem_cosecha_real]
+                    rend_base_ha = r_row[veg].values[0] if (not r_row.empty and veg in r_row) else 10000
                     
-        # Detectar si hubo solapamiento (>1 ciclo en la misma semana)
-        for s, count in semanas_duplicadas.items():
+                    kg_estimados = area * rend_base_ha * pct
+                    
+                    prod_registros.append({
+                        'Semana': sem_cosecha_real,
+                        'Finca': finca,
+                        'Lote': lote,
+                        'Vegetal': veg,
+                        'Produccion_Kg': kg_estimados
+                    })
+        
+        # Validar si hay más de 1 cultivo en la misma semana para este lote
+        for s, count in semanas_conteo.items():
             if count > 1:
-                conflictos.append(f"⚠️ **Conflicto de Solapamiento:** Finca **{finca}** - Lote **{lote}** en la **Semana {s}** ({semanas_ocupacion[s]})")
+                conflictos.append(f"⚠️ **Solapamiento:** Finca **{finca}** - Lote **{lote}** en Semana **{s}** ({semanas_texto[s]})")
         
         for s in range(1, 53):
-            fila[f"S{s}"] = semanas_ocupacion[s]
+            fila_matriz[f"S{s}"] = semanas_texto[s]
             
-        matriz_dict.append(fila)
+        matriz_ocupacion.append(fila_matriz)
         
-    df_matriz = pd.DataFrame(matriz_dict)
+    return pd.DataFrame(matriz_ocupacion), pd.DataFrame(prod_registros), conflictos
+
+df_matriz, df_produccion, lista_conflictos = calcular_matrices()
+
+# ---------------------------------------------------------
+# 3. INTERFAZ Y NAVEGACIÓN
+# ---------------------------------------------------------
+st.sidebar.title("Navegación")
+opcion = st.sidebar.radio("Ir a:", [
+    "📈 Curva de Cosecha Consolidada",
+    "📋 Planificación (Matriz Semanal)",
+    "➕ Programar Siembra",
+    "⚙️ Configurar Cultivos y Lotes"
+])
+
+# ---------------------------------------------------------
+# VISTA 1: CURVA DE COSECHA CONSOLIDADA POR CULTIVO
+# ---------------------------------------------------------
+if opcion == "📈 Curva de Cosecha Consolidada":
+    st.subheader("📈 Curva de Cosecha Consolidada (Semanas 1 a 52)")
     
-    # Mostrar alertas de conflicto si existen
-    if conflictos:
-        st.error("🚨 **¡ALERTA DE SOBREPOSICIÓN DE CICLOS DETECTADA!**")
-        for conf in conflictos:
+    if df_produccion.empty:
+        st.info("No hay siembras programadas actualmente.")
+    else:
+        # Selector de Vegetal
+        veg_seleccionado = st.selectbox("Seleccionar Cultivo para ver la Curva:", list(st.session_state['vegetales_config'].keys()))
+        
+        df_veg = df_produccion[df_produccion['Vegetal'] == veg_seleccionado]
+        
+        if df_veg.empty:
+            st.warning(f"No hay siembras programadas para {veg_seleccionado}.")
+        else:
+            # Agrupar por semana para ver la suma total de todos los lotes
+            df_curva = df_veg.groupby('Semana')['Produccion_Kg'].sum().reset_index()
+            
+            # Asegurar que se muestren las 52 semanas en la gráfica
+            df_full_semanas = pd.DataFrame({'Semana': range(1, 53)})
+            df_curva = pd.merge(df_full_semanas, df_curva, on='Semana', how='left').fillna(0)
+            
+            # Gráfica de Línea/Área para ver la curva
+            fig = px.area(
+                df_curva, 
+                x='Semana', 
+                y='Produccion_Kg',
+                title=f"Curva de Cosecha Total Estimada para: {veg_seleccionado} (Kg / Semana)",
+                labels={'Produccion_Kg': 'Producción (Kg)', 'Semana': 'Semana del Año'},
+                markers=True
+            )
+            fig.update_traces(line_color='#10B981', fillcolor='rgba(16, 185, 129, 0.2)')
+            fig.update_xaxes(dtick=1)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Desglose por Lote
+            st.markdown(f"#### Desglose de Producción por Lote para {veg_seleccionado}")
+            fig_lotes = px.bar(
+                df_veg, 
+                x='Semana', 
+                y='Produccion_Kg', 
+                color='Lote',
+                title="Aporte de cada Lote a la Curva Semanal",
+                labels={'Produccion_Kg': 'Kg Cosechados'}
+            )
+            fig_lotes.update_xaxes(dtick=1)
+            st.plotly_chart(fig_lotes, use_container_width=True)
+
+# ---------------------------------------------------------
+# VISTA 2: MATRIZ DE PLANIFICACIÓN (ESTILO EXCEL)
+# ---------------------------------------------------------
+elif opcion == "📋 Planificación (Matriz Semanal)":
+    st.subheader("📋 Matriz Semanal de Ocupación por Lote")
+    
+    if lista_conflictos:
+        st.error("🚨 **¡ALERTAS DE SOLAPAMIENTO DE CICLOS!**")
+        for conf in lista_conflictos:
             st.markdown(f"<div class='alert-box'>{conf}</div>", unsafe_allow_html=True)
     else:
-        st.success("✅ **Planificación Limpia:** No hay solapamientos de ciclos en ningún lote.")
+        st.success("✅ **Sin conflictos:** No hay sobreposición de cultivos en ningún lote.")
         
-    st.markdown("---")
-    st.markdown("### Vista de Calendario por Lote (Pestaña Planificación)")
     st.dataframe(df_matriz, use_container_width=True, height=450)
 
 # ---------------------------------------------------------
-# OPCIÓN 2: REGISTRAR / EDITAR SIEMBRAS CON VALIDACIÓN
+# VISTA 3: PROGRAMAR SIEMBRA
 # ---------------------------------------------------------
-elif opcion == "➕ Registrar / Editar Siembra":
-    st.subheader("➕ Programar Nueva Siembra")
+elif opcion == "➕ Programar Siembra":
+    st.subheader("➕ Registrar Nueva Siembra")
     
     lotes_df = st.session_state['lotes_db']
     veg_config = st.session_state['vegetales_config']
     
-    col1, col2 = st.columns([1, 1])
-    
+    col1, col2 = st.columns(2)
     with col1:
-        fincas_disponibles = lotes_df['Finca'].unique()
-        finca_sel = st.selectbox("Seleccionar Finca:", fincas_disponibles)
+        finca_sel = st.selectbox("Finca:", lotes_df['Finca'].unique())
+        lote_sel = st.selectbox("Lote:", lotes_df[lotes_df['Finca'] == finca_sel]['Lote'].unique())
+        veg_sel = st.selectbox("Cultivo:", list(veg_config.keys()))
+        sem_in = st.number_input("Semana de Siembra (1-52):", min_value=1, max_value=52, value=1)
         
-        lotes_finca = lotes_df[lotes_df['Finca'] == finca_sel]['Lote'].unique()
-        lote_sel = st.selectbox("Seleccionar Lote:", lotes_finca)
-        
-        veg_sel = st.selectbox("Seleccionar Vegetal:", list(veg_config.keys()))
-        sem_inicio = st.number_input("Semana de Siembra (1-52):", min_value=1, max_value=52, value=1)
-        
-        # Validar en tiempo real antes de guardar
-        duracion_nueva = veg_config[veg_sel]['duracion_total'] + veg_config[veg_sel]['descanso_post']
-        sem_fin_nueva = sem_inicio + duracion_nueva - 1
-        
-        # Verificar si choca con alguna siembra existente
-        choque = False
-        mismo_lote_plans = [p for p in st.session_state['planificaciones'] if p['Finca'] == finca_sel and p['Lote'] == lote_sel]
-        
-        for p in mismo_lote_plans:
-            d = veg_config.get(p['Vegetal'], {}).get('duracion_total', 12) + veg_config.get(p['Vegetal'], {}).get('descanso_post', 0)
-            p_inicio = p['Semana_Siembra']
-            p_fin = p_inicio + d - 1
-            
-            # Condición de solapamiento
-            if not (sem_fin_nueva < p_inicio or sem_inicio > p_fin):
-                choque = True
-                st.warning(f"⚠️ **Atención:** En el lote {lote_sel} ya existe una siembra de **{p['Vegetal']}** (Semanas {p_inicio} a {p_fin}).")
-
-        if st.button("Guardar Planificación de Siembra"):
+        if st.button("Guardar Siembra"):
             st.session_state['planificaciones'].append({
                 'Finca': finca_sel,
                 'Lote': lote_sel,
                 'Vegetal': veg_sel,
-                'Semana_Siembra': sem_inicio
+                'Semana_Siembra': sem_in
             })
-            st.success(f"Siembra de {veg_sel} registrada correctamente para Finca {finca_sel} - Lote {lote_sel}.")
+            st.success("Siembra registrada.")
+            st.rerun()
+            
+    with col2:
+        st.markdown("### Siembras Registradas")
+        st.dataframe(pd.DataFrame(st.session_state['planificaciones']), use_container_width=True)
+        if st.button("Borrar Todo"):
+            st.session_state['planificaciones'] = []
             st.rerun()
 
-    with col2:
-        st.markdown("### Planificaciones Guardadas")
-        if st.session_state['planificaciones']:
-            df_plan_view = pd.DataFrame(st.session_state['planificaciones'])
-            st.dataframe(df_plan_view, use_container_width=True)
-            if st.button("Limpiar Todas las Planificaciones"):
-                st.session_state['planificaciones'] = []
-                st.rerun()
-
 # ---------------------------------------------------------
-# OPCIÓN 3: CONFIGURACIÓN DINÁMICA (NUEVOS VEGETALES, CICLOS, FINCAS Y LOTES)
+# VISTA 4: CONFIGURACIÓN
 # ---------------------------------------------------------
-elif opcion == "⚙️ Configuración (Vegetales, Lotes y Fincas)":
-    st.subheader("⚙️ Configuración de Parámetros del Sistema")
+elif opcion == "⚙️ Configurar Cultivos y Lotes":
+    st.subheader("⚙️ Configuración de Parámetros")
+    tab1, tab2 = st.tabs(["🌱 Cultivos y Curvas", "🚜 Fincas y Lotes"])
     
-    tab1, tab2 = st.tabs(["🌱 Configurar Vegetales y Ciclos", "🚜 Configurar Fincas y Lotes"])
-    
-    # TAB 1: VEGETALES Y CICLOS
     with tab1:
-        st.markdown("#### Añadir o Modificar Vegetal / Tamaño de Ciclo")
-        col_v1, col_v2 = st.columns(2)
-        with col_v1:
-            nombre_veg = st.text_input("Nombre del Vegetal (ej. Arveja, Ejote Fino):")
-            duracion_tot = st.number_input("Duración Total del Ciclo (semanas):", min_value=1, max_value=30, value=12)
-            descanso_post = st.number_input("Semanas de Descanso Post-Cosecha:", min_value=0, max_value=10, value=3)
-            
-            if st.button("Guardar / Actualizar Vegetal"):
-                if nombre_veg:
-                    if nombre_veg not in st.session_state['vegetales_config']:
-                        st.session_state['vegetales_config'][nombre_veg] = {
-                            'duracion_total': duracion_tot,
-                            'descanso_post': descanso_post,
-                            'cosechas': {duracion_tot - 1: 0.5, duracion_tot: 0.5}
-                        }
-                    else:
-                        st.session_state['vegetales_config'][nombre_veg]['duracion_total'] = duracion_tot
-                        st.session_state['vegetales_config'][nombre_veg]['descanso_post'] = descanso_post
-                    st.success(f"Vegetal '{nombre_veg}' guardado exitosamente.")
-                    st.rerun()
-        
-        with col_v2:
-            st.markdown("#### Vegetales Activos:")
-            st.json(st.session_state['vegetales_config'])
-
-    # TAB 2: FINCAS Y LOTES
+        st.json(st.session_state['vegetales_config'])
     with tab2:
-        st.markdown("#### Agregar Nuevas Fincas y Lotes")
-        col_l1, col_l2 = st.columns(2)
-        with col_l1:
-            nueva_finca = st.text_input("Código/Nombre Finca (ej. TM, NP, Finca La Cuchilla):")
-            nuevo_lote = st.text_input("Identificador del Lote (ej. Lote 1, Lote 12B):")
-            nueva_area = st.number_input("Área en Hectáreas (Ha):", min_value=0.1, max_value=100.0, value=1.0)
-            
-            if st.button("Agregar Lote"):
-                if nueva_finca and nuevo_lote:
-                    nuevo_df = pd.DataFrame([{'Finca': nueva_finca, 'Lote': nuevo_lote, 'Area_Ha': nueva_area}])
-                    st.session_state['lotes_db'] = pd.concat([st.session_state['lotes_db'], nuevo_df], ignore_index=True)
-                    st.success(f"Lote {nuevo_lote} agregado a Finca {nueva_finca}.")
-                    st.rerun()
-                    
-        with col_l2:
-            st.markdown("#### Tabla de Lotes Registrados:")
-            st.dataframe(st.session_state['lotes_db'], use_container_width=True)
+        st.dataframe(st.session_state['lotes_db'], use_container_width=True)
