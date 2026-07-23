@@ -9,6 +9,27 @@ st.set_page_config(
     layout="wide"
 )
 
+# ---------------------------------------------------------
+# ESTILOS CSS INYECTADOS PARA FORZAR TAMAÑO Y LEGIBILIDAD
+# ---------------------------------------------------------
+st.markdown("""
+    <style>
+    /* Forzar fuentes grandes y legibles en toda la tabla AgGrid */
+    .ag-theme-alpine .ag-cell {
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    .ag-theme-alpine .ag-header-cell-label {
+        font-size: 15px !important;
+        font-weight: bold !important;
+        justify-content: center !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("🌾 Matriz Semanal de Planificación Agrícola")
 st.caption("Selecciona el vegetal en la semana de inicio. La tabla expandirá dinámicamente todo el ciclo y marcará en rojo si existe solapamiento.")
 
@@ -126,30 +147,30 @@ with tab_matriz:
     gb = GridOptionsBuilder.from_dataframe(df_matriz_unificada)
     gb.configure_default_column(editable=True, groupable=True)
 
-    # Aumentar altura de filas y de encabezados
+    # Aumentar drásticamente la altura de filas y encabezados
     gb.configure_grid_options(
-        rowHeight=45,       # <--- Filas mucho más altas y holgadas
-        headerHeight=45     # <--- Encabezados con buena altura
+        rowHeight=60,       # <--- Filas muy amplias (60px)
+        headerHeight=50     # <--- Encabezado amplio (50px)
     )
 
-    # Columnas fijas de la izquierda con ancho suficiente
-    gb.configure_column("Finca", editable=False, pinned="left", width=100)
-    gb.configure_column("Lote", editable=False, pinned="left", width=110)
-    gb.configure_column("Área (Ha)", editable=False, pinned="left", width=110)
+    # Columnas fijas de la izquierda con ancho holgado
+    gb.configure_column("Finca", editable=False, pinned="left", width=110)
+    gb.configure_column("Lote", editable=False, pinned="left", width=120)
+    gb.configure_column("Área (Ha)", editable=False, pinned="left", width=120)
 
-    # Estilos dinámicos JS por tipo de estado
+    # Estilos dinámicos JS con colores y bordes claros
     cell_style_js = JsCode("""
     function(params) {
-        var baseStyle = {'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '13px'};
+        var baseStyle = {'fontSize': '14px', 'fontWeight': 'bold'};
         if (!params.value) return baseStyle;
         var val = params.value.toString();
         
         if (val.includes("🔴") || val.includes("CHOQUE")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#fee2e2', 'color': '#991b1b', 'fontWeight': 'bold'});
+            return Object.assign(baseStyle, {'backgroundColor': '#fee2e2', 'color': '#991b1b'});
         } else if (val.includes("🌱")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#dcfce7', 'color': '#166534', 'fontWeight': 'bold'});
+            return Object.assign(baseStyle, {'backgroundColor': '#dcfce7', 'color': '#166534'});
         } else if (val.includes("🟢")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#bbf7d0', 'color': '#14532d', 'fontWeight': 'bold'});
+            return Object.assign(baseStyle, {'backgroundColor': '#bbf7d0', 'color': '#14532d'});
         } else if (val.includes("▫️")) {
             return Object.assign(baseStyle, {'backgroundColor': '#f3f4f6', 'color': '#374151'});
         } else if (val.includes("🧹")) {
@@ -167,10 +188,8 @@ with tab_matriz:
             f"S{s}",
             cellEditor='agSelectCellEditor',
             cellEditorParams={'values': opciones_vegetales},
-            width=135,  # <--- Columnas más anchas (135px) para leer completos los textos/Kilos
-            cellStyle=cell_style_js,
-            wrapText=True,
-            autoHeaderHeight=True
+            width=180,  # <--- COLUMNAS MUCHO MÁS ANCHAS (180px)
+            cellStyle=cell_style_js
         )
 
     grid_options = gb.build()
@@ -184,7 +203,7 @@ with tab_matriz:
         update_mode=GridUpdateMode.VALUE_CHANGED,
         allow_unsafe_jscode=True,
         fit_columns_on_grid_load=False,
-        height=380  # Altura general de la ventana AgGrid ampliada
+        height=450  # Contenedor principal mucho más alto
     )
 
     # ---------------------------------------------------------
