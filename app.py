@@ -48,8 +48,6 @@ LOTES_BASE = [
 # 2. INICIALIZAR SIEMBRAS BASE Y ESTRUCTURA
 # ---------------------------------------------------------
 if 'siembras_origen' not in st.session_state:
-    # Guardamos únicamente dónde se planifica el inicio de siembra
-    # Estructura: {(finca, lote, semana): 'NombreVegetal'}
     st.session_state['siembras_origen'] = {
         ('TM', 'Lote 1', 2): 'Ejote',
         ('TM', 'Lote 2', 5): 'Broccoli'
@@ -123,34 +121,41 @@ with tab_matriz:
     df_matriz_unificada = pd.DataFrame(filas_matriz)
 
     # ---------------------------------------------------------
-    # CONFIGURACIÓN VISUAL DE AGGRID
+    # CONFIGURACIÓN VISUAL Y DIMENSIONES DE AGGRID
     # ---------------------------------------------------------
     gb = GridOptionsBuilder.from_dataframe(df_matriz_unificada)
     gb.configure_default_column(editable=True, groupable=True)
 
-    # Columnas fijas de la izquierda
-    gb.configure_column("Finca", editable=False, pinned="left", width=90)
-    gb.configure_column("Lote", editable=False, pinned="left", width=100)
-    gb.configure_column("Área (Ha)", editable=False, pinned="left", width=100)
+    # Aumentar altura de filas y de encabezados
+    gb.configure_grid_options(
+        rowHeight=45,       # <--- Filas mucho más altas y holgadas
+        headerHeight=45     # <--- Encabezados con buena altura
+    )
+
+    # Columnas fijas de la izquierda con ancho suficiente
+    gb.configure_column("Finca", editable=False, pinned="left", width=100)
+    gb.configure_column("Lote", editable=False, pinned="left", width=110)
+    gb.configure_column("Área (Ha)", editable=False, pinned="left", width=110)
 
     # Estilos dinámicos JS por tipo de estado
     cell_style_js = JsCode("""
     function(params) {
-        if (!params.value) return null;
+        var baseStyle = {'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '13px'};
+        if (!params.value) return baseStyle;
         var val = params.value.toString();
         
         if (val.includes("🔴") || val.includes("CHOQUE")) {
-            return {'backgroundColor': '#fee2e2', 'color': '#991b1b', 'fontWeight': 'bold'};
+            return Object.assign(baseStyle, {'backgroundColor': '#fee2e2', 'color': '#991b1b', 'fontWeight': 'bold'});
         } else if (val.includes("🌱")) {
-            return {'backgroundColor': '#dcfce7', 'color': '#166534', 'fontWeight': 'bold'};
+            return Object.assign(baseStyle, {'backgroundColor': '#dcfce7', 'color': '#166534', 'fontWeight': 'bold'});
         } else if (val.includes("🟢")) {
-            return {'backgroundColor': '#bbf7d0', 'color': '#14532d', 'fontWeight': 'bold'};
+            return Object.assign(baseStyle, {'backgroundColor': '#bbf7d0', 'color': '#14532d', 'fontWeight': 'bold'});
         } else if (val.includes("▫️")) {
-            return {'backgroundColor': '#f3f4f6', 'color': '#374151'};
+            return Object.assign(baseStyle, {'backgroundColor': '#f3f4f6', 'color': '#374151'});
         } else if (val.includes("🧹")) {
-            return {'backgroundColor': '#fef3c7', 'color': '#92400e'};
+            return Object.assign(baseStyle, {'backgroundColor': '#fef3c7', 'color': '#92400e'});
         }
-        return null;
+        return baseStyle;
     }
     """)
 
@@ -162,8 +167,10 @@ with tab_matriz:
             f"S{s}",
             cellEditor='agSelectCellEditor',
             cellEditorParams={'values': opciones_vegetales},
-            width=115,  # Celdas anchas
-            cellStyle=cell_style_js
+            width=135,  # <--- Columnas más anchas (135px) para leer completos los textos/Kilos
+            cellStyle=cell_style_js,
+            wrapText=True,
+            autoHeaderHeight=True
         )
 
     grid_options = gb.build()
@@ -177,7 +184,7 @@ with tab_matriz:
         update_mode=GridUpdateMode.VALUE_CHANGED,
         allow_unsafe_jscode=True,
         fit_columns_on_grid_load=False,
-        height=320
+        height=380  # Altura general de la ventana AgGrid ampliada
     )
 
     # ---------------------------------------------------------
