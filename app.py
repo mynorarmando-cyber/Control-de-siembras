@@ -3,16 +3,16 @@ import pandas as pd
 import plotly.express as px
 
 st.set_page_config(
-    page_title="Matriz Interactiva de Siembra y Cosecha",
+    page_title="Planificador Agrícola por Matriz Directa",
     page_icon="🌾",
     layout="wide"
 )
 
 st.title("🌾 Matriz Directa de Planificación Agrícola")
-st.caption("Escribe el nombre del vegetal (ej. **Ejote**) en la semana donde iniciará la siembra. El sistema proyectará automáticamente todo el ciclo y la curva de cosecha hacia la derecha.")
+st.caption("Escribe **'Ejote'** en la semana de inicio. Al presionar **'Procesar y Armar Ciclos'** (o presionar Enter), la matriz completará automáticamente la cosecha y el desarrollo a la derecha.")
 
 # ---------------------------------------------------------
-# 1. PARÁMETROS DE CULTIVOS Y CURVAS
+# 1. PARÁMETROS DEL CULTIVO (EJOTE)
 # ---------------------------------------------------------
 CULTIVOS_CONFIG = {
     'Ejote': {
@@ -41,7 +41,7 @@ LOTES = [
 # ---------------------------------------------------------
 # 2. INICIALIZAR LA MATRIZ DE TRABAJO (S1 a S52)
 # ---------------------------------------------------------
-if 'matriz_entrada' not in st.session_state:
+if 'matriz_trabajo' not in st.session_state:
     filas_iniciales = []
     for l in LOTES:
         fila = {'Finca': l['Finca'], 'Lote': l['Lote'], 'Área (Ha)': l['Area_Ha']}
@@ -49,57 +49,43 @@ if 'matriz_entrada' not in st.session_state:
             fila[f"S{s}"] = ""
         filas_iniciales.append(fila)
     
-    # Ejemplo inicial: Ejote en S2 para Lote 1, y en S5 para Lote 2
+    # Ejemplo inicial: ponemos "Ejote" en S2 del Lote 1
     filas_iniciales[0]['S2'] = 'Ejote'
-    filas_iniciales[1]['S5'] = 'Ejote'
-    
-    st.session_state['matriz_entrada'] = pd.DataFrame(filas_iniciales)
+    st.session_state['matriz_trabajo'] = pd.DataFrame(filas_iniciales)
 
 # ---------------------------------------------------------
-# 3. EDITOR INTERACTIVO DIRECTO EN LA MATRIZ
+# 3. FUNCIÓN PARA EXPANDIR CULTIVOS Y ARMAR CICLOS
 # ---------------------------------------------------------
-st.subheader("📋 Matriz Semanal de Entrada (Edita directamente las celdas)")
-st.info("💡 **Instrucciones:** Escribe **'Ejote'** o **'Broccoli'** en la semana donde quieras sembrar. Deja la celda vacía para borrar una siembra.")
+def expandir_ciclos_en_matriz(df_in):
+    df_out = df_in.copy()
+    registros_cosecha = []
+    conflictos = []
 
-# Matriz donde el usuario edita
-matriz_editada = st.data_editor(
-    st.session_state['matriz_entrada'],
-    use_container_width=True,
-    height=250,
-    key="editor_matriz_directa"
-)
-
-st.session_state['matriz_entrada'] = matriz_editada
-
-# ---------------------------------------------------------
-# 4. PROCESAMIENTO Y PROYECCIÓN AUTOMÁTICA DE LA CURVA
-# ---------------------------------------------------------
-matriz_proyectada = []
-registros_cosecha = []
-conflictos = []
-
-for idx, row in matriz_editada.iterrows():
-    finca = row['Finca']
-    lote = row['Lote']
-    area = row['Área (Ha)']
-    
-    # Crear estructura para la matriz calculada visual
-    fila_calculada = {'Finca': finca, 'Lote': lote, 'Área (Ha)': area}
-    mapa_semanas = {s: [] for s in range(1, 53)}
-    
-    # 1. Detectar en qué semanas el usuario escribió un cultivo
-    for s in range(1, 53):
-        valor_celda = str(row[f"S{s}"]).strip()
+    for idx, row in df_in.iterrows():
+        finca = row['Finca']
+        lote = row['Lote']
+        area = row['Área (Ha)']
         
-        # Si la celda contiene el nombre de un cultivo válido o texto de siembra
-        for nombre_cultivo, cfg in CULTIVOS_CONFIG.items():
-            if nombre_cultivo.lower() in valor_celda.lower():
-                # Desplegar todo el ciclo a partir de esta semana 's'
-                duracion_ocupada = cfg['duracion_total'] + cfg['descanso_post']
+        # Guardar las siembras detectadas en la fila
+        siembras_detectadas = []
+        for s in range(1, 53):
+            val = str(row[f"S{s}"]).strip()
+            for crop_name in CULTIVOS_CONFIG.keys():
+                if crop_name.lower() in val.lower():
+                    siembras_detectadas.append((s, crop_name))
+        
+        # Si se detectaron siembras, limpiar y proyectar la fila
+        if siembras_detectadas:
+            # Crear mapa limpio para las 52 semanas
+            mapa_semanas = {s: [] for s in range(1, 53)}
+            
+            for sem_inicio, crop_name in siembras_detectadas:
+                cfg = CULTIVOS_CONFIG[crop_name]
+                duracion_total = cfg['duracion_total'] + cfg['descanso_post']
                 
-                for sem_rel, sem_abs in enumerate(range(s, min(s + duracion_ocupada, 53)), start=1):
+                for sem_rel, sem_abs in enumerate(range(sem_inicio, min(sem_inicio + duracion_total, 53)), start=1):
                     if sem_rel == 1:
-                        mapa_semanas[sem_abs].append(f"🌱 {nombre_cultivo}")
+                        mapa_semanas[sem_abs].append(f"🌱 {crop_name}")
                     elif sem_rel in cfg['cosecha_pct']:
                         pct = cfg['cosecha_pct'][sem_rel]
                         kg_cosecha = area * RENDIMIENTO_BASE_KG_HA * pct
@@ -108,7 +94,7 @@ for idx, row in matriz_editada.iterrows():
                         registros_cosecha.append({
                             'Semana': sem_abs,
                             'Lote': f"{finca}-{lote}",
-                            'Cultivo': nombre_cultivo,
+                            'Cultivo': crop_name,
                             'Producción_Kg': kg_cosecha
                         })
                     elif sem_rel <= cfg['duracion_total']:
@@ -116,39 +102,52 @@ for idx, row in matriz_editada.iterrows():
                     else:
                         mapa_semanas[sem_abs].append("🧹 Descanso")
 
-    # 2. Construir la fila final con textos/iconos o alertas de choque
-    for s in range(1, 53):
-        eventos = mapa_semanas[s]
-        if len(eventos) > 1:
-            conflictos.append(f"⚠️ **Solapamiento:** Finca **{finca}** - Lote **{lote}** tiene ciclos cruzados en la **Semana {s}**.")
-            fila_calculada[f"S{s}"] = "🔴 CHOQUE"
-        elif len(eventos) == 1:
-            fila_calculada[f"S{s}"] = eventos[0]
-        else:
-            fila_calculada[f"S{s}"] = ""
-            
-    matriz_proyectada.append(fila_calculada)
-
-df_matriz_visual = pd.DataFrame(matriz_proyectada)
-df_cosecha = pd.DataFrame(registros_cosecha)
+            # Asignar a la matriz de salida
+            for s in range(1, 53):
+                eventos = mapa_semanas[s]
+                if len(eventos) > 1:
+                    conflictos.append(f"⚠️ Solapamiento en **{finca}-{lote}**, Semana {s}.")
+                    df_out.at[idx, f"S{s}"] = "🔴 CHOQUE"
+                elif len(eventos) == 1:
+                    df_out.at[idx, f"S{s}"] = eventos[0]
+                else:
+                    df_out.at[idx, f"S{s}"] = ""
+                    
+    return df_out, pd.DataFrame(registros_cosecha), conflictos
 
 # ---------------------------------------------------------
-# 5. VISUALIZACIÓN DE RESULTADOS Y CURVA
+# 4. INTERFAZ Y EDITOR
 # ---------------------------------------------------------
-st.divider()
+col_title, col_btn = st.columns([3, 1])
+
+with col_btn:
+    if st.button("🔄 Generar / Actualizar Ciclos", type="primary", use_container_width=True):
+        st.session_state['matriz_trabajo'], df_cosecha, conflictos = expandir_ciclos_en_matriz(st.session_state['matriz_trabajo'])
+        st.rerun()
+
+# Matriz Editable Directa
+matriz_editada = st.data_editor(
+    st.session_state['matriz_trabajo'],
+    use_container_width=True,
+    height=300,
+    key="editor_matriz_unificada"
+)
+
+# Guardar cambios del usuario
+st.session_state['matriz_trabajo'] = matriz_editada
+
+# Auto-calcular curva para visualización de gráficas
+df_matriz_procesada, df_cosecha, conflictos = expandir_ciclos_en_matriz(matriz_editada)
 
 if conflictos:
-    st.error("🚨 **CONFLICTOS DE ESPACIO DETECTADOS:**")
-    for conf in set(conflictos):
-        st.warning(conf)
+    st.error("🚨 **CONFLICTOS DETECTADOS:**")
+    for c in set(conflictos):
+        st.warning(c)
 
-st.subheader("🖼️ Vista Resultado: Proyección Automática del Ciclo Completo")
-st.caption("Esta tabla muestra cómo se armó la curva automáticamente a la derecha de la semana donde pusiste el nombre del cultivo.")
-st.dataframe(df_matriz_visual, use_container_width=True, height=250)
-
+# ---------------------------------------------------------
+# 5. GRÁFICA DE LA CURVA CONSOLIDADA
+# ---------------------------------------------------------
 st.divider()
-
-# GRÁFICA DE LA CURVA CONSOLIDADA
 st.subheader("📈 Curva Total Consolidada de Cosecha (Semanas 1 a 52)")
 
 if not df_cosecha.empty:
@@ -167,15 +166,3 @@ if not df_cosecha.empty:
     fig.update_traces(line_color='#059669', fillcolor='rgba(5, 150, 105, 0.25)')
     fig.update_xaxes(dtick=1)
     st.plotly_chart(fig, use_container_width=True)
-    
-    # Desglose por lote
-    fig_lotes = px.bar(
-        df_cosecha,
-        x='Semana',
-        y='Producción_Kg',
-        color='Lote',
-        title="Aporte de cada Lote a la Curva Semanal",
-        labels={'Producción_Kg': 'Kg Cosechados'}
-    )
-    fig_lotes.update_xaxes(dtick=1)
-    st.plotly_chart(fig_lotes, use_container_width=True)
