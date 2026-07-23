@@ -10,20 +10,21 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# ESTILOS CSS INYECTADOS PARA FORZAR TAMAÑO Y LEGIBILIDAD
+# ESTILOS CSS PARA MEJORAR LEGIBILIDAD
 # ---------------------------------------------------------
 st.markdown("""
     <style>
-    /* Forzar fuentes grandes y legibles en toda la tabla AgGrid */
     .ag-theme-alpine .ag-cell {
-        font-size: 14px !important;
+        font-size: 13px !important;
         font-weight: 600 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
     }
     .ag-theme-alpine .ag-header-cell-label {
-        font-size: 15px !important;
+        font-size: 14px !important;
         font-weight: bold !important;
         justify-content: center !important;
     }
@@ -142,26 +143,30 @@ with tab_matriz:
     df_matriz_unificada = pd.DataFrame(filas_matriz)
 
     # ---------------------------------------------------------
-    # CONFIGURACIÓN VISUAL Y DIMENSIONES DE AGGRID
+    # CONFIGURACIÓN VISUAL Y AUTO-AJUSTE DE AGGRID
     # ---------------------------------------------------------
     gb = GridOptionsBuilder.from_dataframe(df_matriz_unificada)
     gb.configure_default_column(editable=True, groupable=True)
 
-    # Aumentar drásticamente la altura de filas y encabezados
+    # Estrategia de Auto-Ajuste Automático por Contenido
     gb.configure_grid_options(
-        rowHeight=60,       # <--- Filas muy amplias (60px)
-        headerHeight=50     # <--- Encabezado amplio (50px)
+        rowHeight=55,
+        headerHeight=45,
+        autoSizeStrategy={
+            'type': 'fitCellContents',   # Ajusta cada columna al texto más largo
+            'defaultMinWidth': 85        # Ancho mínimo para semanas vacías
+        }
     )
 
-    # Columnas fijas de la izquierda con ancho holgado
-    gb.configure_column("Finca", editable=False, pinned="left", width=110)
-    gb.configure_column("Lote", editable=False, pinned="left", width=120)
-    gb.configure_column("Área (Ha)", editable=False, pinned="left", width=120)
+    # Columnas fijas de la izquierda
+    gb.configure_column("Finca", editable=False, pinned="left")
+    gb.configure_column("Lote", editable=False, pinned="left")
+    gb.configure_column("Área (Ha)", editable=False, pinned="left")
 
-    # Estilos dinámicos JS con colores y bordes claros
+    # Estilos dinámicos JS por tipo de estado
     cell_style_js = JsCode("""
     function(params) {
-        var baseStyle = {'fontSize': '14px', 'fontWeight': 'bold'};
+        var baseStyle = {'fontSize': '13px', 'fontWeight': 'bold'};
         if (!params.value) return baseStyle;
         var val = params.value.toString();
         
@@ -188,14 +193,13 @@ with tab_matriz:
             f"S{s}",
             cellEditor='agSelectCellEditor',
             cellEditorParams={'values': opciones_vegetales},
-            width=180,  # <--- COLUMNAS MUCHO MÁS ANCHAS (180px)
             cellStyle=cell_style_js
         )
 
     grid_options = gb.build()
 
     st.subheader("📋 Matriz Única de Planificación y Proyección (S1 - S52)")
-    st.caption("Al seleccionar un vegetal en una celda vacía, la tabla proyectará automáticamente las semanas de Desarrollo (▫️), Cosecha (🟢) y Descanso (🧹).")
+    st.caption("Las columnas ajustan su ancho automáticamente según el contenido (vegetal, kilos o texto).")
 
     grid_response = AgGrid(
         df_matriz_unificada,
@@ -203,7 +207,7 @@ with tab_matriz:
         update_mode=GridUpdateMode.VALUE_CHANGED,
         allow_unsafe_jscode=True,
         fit_columns_on_grid_load=False,
-        height=450  # Contenedor principal mucho más alto
+        height=400
     )
 
     # ---------------------------------------------------------
