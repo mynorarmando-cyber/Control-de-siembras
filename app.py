@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — Prototipo V6",
+    page_title="Planificación de Siembras — Prototipo V7",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -71,6 +71,9 @@ html_code = """
   .field select { padding:4px 7px; border:1px solid var(--line);
     border-radius:6px; font-size:12px; background:#fff; color: var(--ink); }
 
+  .multi-year-selector { display:flex; gap:8px; align-items:center; background:#f0efe8; padding:3px 8px; border-radius:6px; border:1px solid var(--line); }
+  .multi-year-selector label { font-size:11px; cursor:pointer; display:flex; align-items:center; gap:3px; }
+
   .stat { background:#f0efe8; border:1px solid var(--line); border-radius:7px; padding:4px 10px; }
   .stat b { font-size:13px; color: var(--forest); display:block; }
   .stat span { font-size:10px; color:var(--muted); text-transform:uppercase; }
@@ -91,6 +94,8 @@ html_code = """
     font-weight:600; font-size:11px; padding:4px 2px; }
   th.lotehead .sub { font-size:9.5px; font-weight:normal; color:var(--muted); }
   
+  tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:12px; text-align:left; padding:4px 12px; position:sticky; left:0; z-index:9; }
+
   td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:70px; min-width:70px;
     font-weight:600; font-size:11px; height:26px; }
   td.sumcell { position:sticky; left:70px; z-index:7; background:#eef4f2; width:110px; min-width:110px;
@@ -131,8 +136,8 @@ html_code = """
     <div class="field">Filtrar Vegetal:
       <select id="vegFilter"><option value="">Todos</option></select>
     </div>
-    <div class="field">Horizonte:
-      <select id="yearsFilter"></select>
+    <div class="field">Años a visualizar:
+      <div class="multi-year-selector" id="yearCheckboxes"></div>
     </div>
     <div class="stat"><b id="statArea">–</b><span>Área en Uso (ha)</span></div>
     <div class="stat"><b id="statProd">–</b><span>Prod. Proyectada</span></div>
@@ -146,9 +151,8 @@ html_code = """
 <div id="modalWrap"></div>
 
 <script>
-const BASE_YEAR = 2026;
-let totalYears = 2;
-let totalWeeks = 104;
+const AVAILABLE_YEARS = [2025, 2026, 2027, 2028];
+let selectedYears = [2026, 2027];
 
 const CICLOS = {
   Ejote:    { duracion: 12, cosechas: [[10,0.35],[11,0.42],[12,0.23]], rendimiento: 11500, color:'ejote' },
@@ -158,7 +162,6 @@ const CICLOS = {
   Dulce:    { duracion: 14, cosechas: [[11,0.10],[12,0.20],[13,0.41],[14,0.29]], rendimiento: 10000, color:'dulce' }
 };
 
-// Generador de color dinámico para vegetales nuevos
 function getVegetableStyle(vegName) {
   const c = CICLOS[vegName];
   if (c && c.color) {
@@ -191,49 +194,62 @@ function initLotes() {
 }
 initLotes();
 
+// Datos con clave unificada: `${year}_${weekInYear}`
 const plantings = {};
-plantings['NP-1'] = [{start: 1, vegetal: 'China'}, {start: 48, vegetal: 'Broccoli'}];
-plantings['CH-1'] = [{start: 1, vegetal: 'China'}];
-plantings['TM-1'] = [{start: 2, vegetal: 'China'}];
-plantings['PV-1'] = [{start: 1, vegetal: 'China'}];
+plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}, {year: 2026, weekInYear: 48, vegetal: 'Broccoli'}];
+plantings['CH-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}];
+plantings['TM-1'] = [{year: 2026, weekInYear: 2, vegetal: 'China'}];
+plantings['PV-1'] = [{year: 2027, weekInYear: 5, vegetal: 'China'}];
 
 let dragSource = null;
 
-function findActive(loteId, week){
+function absWeek(year, weekInYear) {
+  return (year - 2020) * 52 + weekInYear;
+}
+
+function findActive(loteId, year, weekInYear){
   const list = plantings[loteId] || [];
+  const currentAbs = absWeek(year, weekInYear);
   for (const p of list){
     const c = CICLOS[p.vegetal];
-    if (c && week >= p.start && week < p.start + c.duracion) return p;
+    if (!c) continue;
+    const startAbs = absWeek(p.year, p.weekInYear);
+    if (currentAbs >= startAbs && currentAbs < startAbs + c.duracion) return p;
   }
   return null;
 }
 
-function hasConflict(loteId, start, vegetal, ignore){
+function hasConflict(loteId, year, weekInYear, vegetal, ignore){
   const c = CICLOS[vegetal];
   if (!c) return false;
   const list = (plantings[loteId]||[]).filter(p=>p!==ignore);
+  const startAbs = absWeek(year, weekInYear);
   for (const p of list){
     const pc = CICLOS[p.vegetal];
-    if (pc && start <= (p.start + pc.duracion - 1) && p.start <= (start + c.duracion - 1)) return true;
+    if (!pc) continue;
+    const pStartAbs = absWeek(p.year, p.weekInYear);
+    if (startAbs <= (pStartAbs + pc.duracion - 1) && pStartAbs <= (startAbs + c.duracion - 1)) return true;
   }
   return false;
 }
 
-function harvestValue(planting, week, area){
+function harvestValue(planting, year, weekInYear, area){
   const c = CICLOS[planting.vegetal];
   if (!c) return 0;
-  const rel = week - planting.start + 1;
+  const currentAbs = absWeek(year, weekInYear);
+  const startAbs = absWeek(planting.year, planting.weekInYear);
+  const rel = currentAbs - startAbs + 1;
   const cosecha = c.cosechas.find(([w])=>w===rel);
   return cosecha ? area * c.rendimiento * cosecha[1] : 0;
 }
 
-function getTotalHarvestAllFincas(week, targetVeg) {
+function getTotalHarvestAllFincas(year, weekInYear, targetVeg) {
   let sum = 0;
   LOTES.forEach(l => {
     const list = plantings[l.id] || [];
     list.forEach(p => {
       if (!targetVeg || p.vegetal === targetVeg) {
-        sum += harvestValue(p, week, l.area);
+        sum += harvestValue(p, year, weekInYear, l.area);
       }
     });
   });
@@ -246,24 +262,24 @@ let popupEl = null;
 
 function closePopup(){ if (popupEl){ popupEl.remove(); popupEl=null; } }
 
-function openCellPopup(cellEl, loteId, week, activePlanting){
+function openCellPopup(cellEl, loteId, year, weekInYear, activePlanting){
   closePopup();
   const p = document.createElement('div');
   p.className = 'popup';
 
   if (!activePlanting) {
-    p.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Sembrar en Sem ${week}</div>` +
+    p.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Sembrar en ${year} — Sem ${weekInYear}</div>` +
       VEG_ORDER.map(v => `<button data-v="${v}">${v} (${CICLOS[v].duracion} sem)</button>`).join('');
     
     p.querySelectorAll('button').forEach(btn => {
       btn.onclick = () => {
         const veg = btn.dataset.v;
-        if (hasConflict(loteId, week, veg)){
+        if (hasConflict(loteId, year, weekInYear, veg)){
           alert('Existe conflicto con otro cultivo en esas semanas.');
           return;
         }
         plantings[loteId] = plantings[loteId] || [];
-        plantings[loteId].push({start: week, vegetal: veg});
+        plantings[loteId].push({year, weekInYear, vegetal: veg});
         closePopup(); render();
       };
     });
@@ -271,7 +287,7 @@ function openCellPopup(cellEl, loteId, week, activePlanting){
     const availableVegs = VEG_ORDER.filter(v => v !== activePlanting.vegetal);
     
     p.innerHTML = `
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Actual: <b>${activePlanting.vegetal}</b> (Sem ${activePlanting.start})</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Actual: <b>${activePlanting.vegetal}</b> (${activePlanting.year} - Sem ${activePlanting.weekInYear})</div>
       <button id="btnDeleteVeg" class="danger">Eliminar Siembra</button>
       <div style="font-size:10.5px;color:var(--muted);margin:4px 0 2px;">Cambiar a otro vegetal:</div>
       ${availableVegs.map(v => `<button data-v="${v}">Cambiar a ${v} (${CICLOS[v].duracion} sem)</button>`).join('')}
@@ -285,7 +301,7 @@ function openCellPopup(cellEl, loteId, week, activePlanting){
     p.querySelectorAll('button[data-v]').forEach(btn => {
       btn.onclick = () => {
         const newVeg = btn.dataset.v;
-        if (hasConflict(loteId, activePlanting.start, newVeg, activePlanting)){
+        if (hasConflict(loteId, activePlanting.year, activePlanting.weekInYear, newVeg, activePlanting)){
           alert('El nuevo vegetal genera conflicto con otro cultivo activo en este lote.');
           return;
         }
@@ -341,19 +357,24 @@ function openSplitModal(){
   };
 }
 
-function initYearFilter() {
-  const select = document.getElementById('yearsFilter');
-  select.innerHTML = `
-    <option value="1">Año ${BASE_YEAR} (52 sem)</option>
-    <option value="2" selected>Años ${BASE_YEAR}-${BASE_YEAR+1} (104 sem)</option>
-    <option value="3">Años ${BASE_YEAR}-${BASE_YEAR+2} (156 sem)</option>
-  `;
+function initYearSelectorUI() {
+  const container = document.getElementById('yearCheckboxes');
+  container.innerHTML = AVAILABLE_YEARS.map(yr => `
+    <label>
+      <input type="checkbox" value="${yr}" ${selectedYears.includes(yr)?'checked':''}>
+      ${yr}
+    </label>
+  `).join('');
+
+  container.querySelectorAll('input').forEach(chk => {
+    chk.onchange = () => {
+      selectedYears = Array.from(container.querySelectorAll('input:checked')).map(i => parseInt(i.value)).sort();
+      render();
+    };
+  });
 }
-initYearFilter();
 
 function render(){
-  totalYears = parseInt(document.getElementById('yearsFilter').value);
-  totalWeeks = totalYears * 52;
   selectedVegFilter = document.getElementById('vegFilter').value;
 
   const tabsWrap = document.getElementById('fincaTabs');
@@ -378,49 +399,58 @@ function render(){
   });
   tableHtml += `</tr></thead><tbody>`;
 
-  for (let w = 1; w <= totalWeeks; w++) {
-    const globalHarvest = getTotalHarvestAllFincas(w, selectedVegFilter);
-    const globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
+  if (selectedYears.length === 0) {
+    tableHtml += `<tr><td colspan="${activeLotes.length + 2}" style="padding:20px;color:var(--muted);">Seleccione al menos un año en el filtro.</td></tr>`;
+  } else {
+    selectedYears.forEach(year => {
+      // Encabezado divisor por cada año
+      tableHtml += `<tr class="year-divider"><td colspan="${activeLotes.length + 2}">Año ${year}</td></tr>`;
 
-    tableHtml += `<tr>
-      <td class="weekcell">${w}</td>
-      <td class="sumcell">${globalHarvestTxt}</td>`;
+      for (let w = 1; w <= 52; w++) {
+        const globalHarvest = getTotalHarvestAllFincas(year, w, selectedVegFilter);
+        const globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
 
-    activeLotes.forEach(l => {
-      const act = findActive(l.id, w);
-      let cellStyle = '';
-      let text = '';
-      let isFilteredOut = false;
-      let isStartCell = false;
+        tableHtml += `<tr>
+          <td class="weekcell">${w}</td>
+          <td class="sumcell">${globalHarvestTxt}</td>`;
 
-      if (act) {
-        if (selectedVegFilter && act.vegetal !== selectedVegFilter) {
-          isFilteredOut = true;
-        } else {
-          cellStyle = getVegetableStyle(act.vegetal);
-          if (act.start === w) {
-            text = act.vegetal;
-            isStartCell = true;
+        activeLotes.forEach(l => {
+          const act = findActive(l.id, year, w);
+          let cellStyle = '';
+          let text = '';
+          let isFilteredOut = false;
+          let isStartCell = false;
+
+          if (act) {
+            if (selectedVegFilter && act.vegetal !== selectedVegFilter) {
+              isFilteredOut = true;
+            } else {
+              cellStyle = getVegetableStyle(act.vegetal);
+              if (act.year === year && act.weekInYear === w) {
+                text = act.vegetal;
+                isStartCell = true;
+              }
+              
+              const val = harvestValue(act, year, w, l.area);
+              if (val > 0) {
+                text = Math.round(val/100)/10 + 'k';
+                prodTotal += val;
+              }
+              if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
+            }
           }
-          
-          const val = harvestValue(act, w, l.area);
-          if (val > 0) {
-            text = Math.round(val/100)/10 + 'k';
-            prodTotal += val;
-          }
-          if (w === 1 || act.start === w) areaUsoTotal += l.area;
-        }
+
+          const draggableAttr = isStartCell && !isFilteredOut ? 'draggable="true"' : '';
+          const draggableClass = isStartCell && !isFilteredOut ? 'draggable' : '';
+
+          tableHtml += `<td class="cell ${act && !isFilteredOut?'planted':''} ${draggableClass}" ${draggableAttr} style="${cellStyle}" data-lote="${l.id}" data-year="${year}" data-week="${w}">
+            ${isFilteredOut ? '' : text}
+          </td>`;
+        });
+
+        tableHtml += `</tr>`;
       }
-
-      const draggableAttr = isStartCell && !isFilteredOut ? 'draggable="true"' : '';
-      const draggableClass = isStartCell && !isFilteredOut ? 'draggable' : '';
-
-      tableHtml += `<td class="cell ${act && !isFilteredOut?'planted':''} ${draggableClass}" ${draggableAttr} style="${cellStyle}" data-lote="${l.id}" data-week="${w}">
-        ${isFilteredOut ? '' : text}
-      </td>`;
     });
-
-    tableHtml += `</tr>`;
   }
 
   tableHtml += `</tbody></table>`;
@@ -431,17 +461,18 @@ function render(){
 
   wrap.querySelectorAll('td.cell').forEach(td => {
     const loteId = td.dataset.lote;
+    const year = parseInt(td.dataset.year);
     const week = parseInt(td.dataset.week);
 
     td.onclick = (e) => {
       e.stopPropagation();
-      const act = findActive(loteId, week);
-      openCellPopup(td, loteId, week, act);
+      const act = findActive(loteId, year, week);
+      openCellPopup(td, loteId, year, week, act);
     };
 
     td.ondragstart = (e) => {
-      const act = findActive(loteId, week);
-      if (act && act.start === week) {
+      const act = findActive(loteId, year, week);
+      if (act && act.year === year && act.weekInYear === week) {
         dragSource = { loteId, planting: act };
         e.dataTransfer.setData('text/plain', '');
       }
@@ -469,14 +500,15 @@ function render(){
         return;
       }
 
-      if (hasConflict(loteId, week, planting.vegetal, planting)) {
+      if (hasConflict(loteId, year, week, planting.vegetal, planting)) {
         td.classList.add('conflict');
         setTimeout(() => td.classList.remove('conflict'), 800);
         dragSource = null;
         return;
       }
 
-      planting.start = week;
+      planting.year = year;
+      planting.weekInYear = week;
       dragSource = null;
       render();
     };
@@ -487,21 +519,23 @@ document.getElementById('vegFilter').innerHTML = '<option value="">Todos los veg
   VEG_ORDER.map(v => `<option value="${v}">${v}</option>`).join('');
 
 document.getElementById('vegFilter').onchange = render;
-document.getElementById('yearsFilter').onchange = render;
 document.getElementById('splitBtn').onclick = openSplitModal;
 
 document.getElementById('exportBtn').onclick = () => {
-  const rows = [['Finca','Lote','Semana','Año Calendario','Vegetal','Produccion']];
+  const rows = [['Finca','Lote','Año','Semana del Año','Vegetal','Produccion']];
   LOTES.forEach(l => {
     (plantings[l.id]||[]).forEach(p => {
       const c = CICLOS[p.vegetal];
       if (!c) return;
-      for(let rel=1; rel<=c.duracion; rel++){
-        const w = p.start + rel - 1;
-        const val = harvestValue(p, w, l.area);
+      for(let rel=0; rel<c.duracion; rel++){
+        let abs = absWeek(p.year, p.weekInYear) + rel;
+        let yr = 2020 + Math.floor(abs / 52);
+        let wk = (abs % 52);
+        if (wk === 0) { wk = 52; yr -= 1; }
+        
+        const val = harvestValue(p, yr, wk, l.area);
         if(val > 0){
-          const calYear = BASE_YEAR + Math.floor((w - 1) / 52);
-          rows.push([l.finca, l.nombre, w, calYear, p.vegetal, Math.round(val)]);
+          rows.push([l.finca, l.nombre, yr, wk, p.vegetal, Math.round(val)]);
         }
       }
     });
@@ -516,6 +550,7 @@ document.addEventListener('click', (e) => {
   if (popupEl && !popupEl.contains(e.target)) closePopup();
 });
 
+initYearSelectorUI();
 render();
 </script>
 </body>
