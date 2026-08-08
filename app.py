@@ -1,15 +1,21 @@
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Sistema Agrícola - Planificación", layout="wide")
+# Configuración inicial de la página
+st.set_page_config(
+    page_title="Sistema de Planificación Agrícola (Siesa Plan)",
+    page_icon="🌱",
+    layout="wide"
+)
 
 st.title("🌱 Sistema de Control de Producción Agrícola (Siesa Plan V2)")
+st.markdown("---")
 
 # ==========================================
-# 1. SIMULACIÓN DE CARGA / DATOS MAESTROS
+# 1. INICIALIZACIÓN DE ESTADOS (SESSION STATE)
 # ==========================================
 
-# A. Catálogo Maestro de Fincas y Lotes (Con estatus Activo/Inactivo)
+# Catálogo Maestro de Fincas y Lotes (Con estatus Activo/Inactivo)
 if "df_lotes" not in st.session_state:
     st.session_state.df_lotes = pd.DataFrame(
         [
@@ -20,7 +26,7 @@ if "df_lotes" not in st.session_state:
         ]
     )
 
-# B. Catálogo Maestro de Cultivos / Vegetales (Baja lógica para proteger históricos)
+# Catálogo Maestro de Cultivos / Vegetales (Baja lógica para proteger históricos)
 if "df_cultivos" not in st.session_state:
     st.session_state.df_cultivos = pd.DataFrame(
         [
@@ -32,15 +38,12 @@ if "df_cultivos" not in st.session_state:
         ]
     )
 
-# C. Matriz de Rendimientos por Semana (Leída o inicializada de tu archivo)
+# Matriz de Rendimientos Semanales (Intenta leer tu Excel, si no, usa respaldo estándar)
 try:
-    # Intenta leer de tu archivo base si está disponible
     df_rendimientos = pd.read_excel("Siesa Plan.xlsx", sheet_name="Rendimientos")
-    # Limpieza básica por si la columna de semana tiene nombres genéricos
     if "Semana" not in df_rendimientos.columns:
         df_rendimientos.columns = ["Semana", "Ejote", "Brocoli", "China", "Dulce", "Grano"]
 except Exception:
-    # Fallback por seguridad si no encuentra el archivo exacto en ejecución
     semanas = list(range(1, 54))
     df_rendimientos = pd.DataFrame({
         "Semana": semanas,
@@ -51,126 +54,172 @@ except Exception:
         "Grano": [8250]*53
     })
 
-# ==========================================
-# 2. PANEL LATERAL DE CONFIGURACIÓN Y FILTROS
-# ==========================================
-st.sidebar.header("⚙️ Parámetros de Planificación")
 
-st.sidebar.subheader("❄️ Configuración Época Fría")
-frio_activo = st.sidebar.checkbox("Considerar Época Fría (Ajuste Ejote)", value=True)
-semana_inicio_frio = st.sidebar.number_input("Semana Inicio Frío", min_value=1, max_value=53, value=47)
+# ==========================================
+# 2. PANEL LATERAL (PARÁMETROS Y CONFIGURACIÓN)
+# ==========================================
+st.sidebar.header("⚙️ Configuración General")
+
+st.sidebar.subheader("❄️ Época Fría (Ajuste Ejote)")
+frio_activo = st.sidebar.checkbox("Activar Lógica de Época Fría", value=True)
+semana_inicio_frio = st.sidebar.number_input("Semana Inicio Frío", min_value=1, max_value=53, value=48)
 semana_fin_frio = st.sidebar.number_input("Semana Fin Frío", min_value=1, max_value=53, value=6)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("📌 Gestión de Catálogos")
-menu_gestion = st.sidebar.selectbox("Ver / Administrar:", ["Simulador de Siembra", "Catálogo de Lotes y Fincas", "Catálogo de Vegetales", "Matriz de Rendimientos"])
+# Navegación principal por pestañas en la barra lateral o superior
+menu_principal = st.sidebar.radio(
+    "Navegación", 
+    ["🚀 Simulador de Producción", "🏢 Gestión de Fincas y Lotes", "🥦 Catálogo de Vegetales", "📊 Matriz de Rendimientos"]
+)
 
 
 # ==========================================
 # 3. VISTAS DE LA APLICACIÓN
 # ==========================================
 
-if menu_gestion == "Catálogo de Lotes y Fincas":
-    st.subheader("🏢 Fincas y Lotes Registrados")
-    st.markdown("Aquí puedes dar de alta nuevas fincas, nuevos lotes y activar/desactivar lotes según su disponibilidad.")
-    st.dataframe(st.session_state.df_lotes, use_container_width=True)
-    
-    with st.form("nuevo_lote"):
-        st.write("Agregar Nuevo Lote")
-        n_finca = st.text_input("Nombre de la Finca")
-        n_lote = st.text_input("Nombre / Código del Lote")
-        n_area = st.number_input("Área Real (Manzanas)", min_value=0.1, value=1.0)
-        submitted_lote = st.form_submit_button("Guardar Lote")
-        if submitted_lote and n_finca and n_lote:
-            nuevo_id = f"L-0{len(st.session_state.df_lotes) + 1}"
-            nueva_fila = {"ID_Lote": nuevo_id, "Finca": n_finca, "Nombre_Lote": n_lote, "Area_Manzanas": n_area, "Estado": "Activo"}
-            st.session_state.df_lotes = pd.concat([st.session_state.df_lotes, pd.DataFrame([nueva_fila])], ignore_index=True)
-            st.success(f"¡Lote {n_lote} agregado exitosamente!")
-            st.rerun()
+if menu_principal == "🚀 Simulador de Producción":
+    st.subheader("🚀 Simulador y Cálculo de Siembra por Lote")
+    st.markdown("Calcula la producción estimada multiplicando el **Área Real del Lote** por el **Rendimiento Semanal**, aplicando automáticamente el ajuste de clima frío al ejote.")
 
-elif menu_gestion == "Catálogo de Vegetales":
-    st.subheader("🥦 Catálogo Maestro de Vegetales / Variedades")
-    st.markdown("Los vegetales inactivos se ocultan de las nuevas siembras pero se conservan para reportes históricos plurianuales.")
-    st.dataframe(st.session_state.df_cultivos, use_container_width=True)
-
-elif menu_gestion == "Matriz de Rendimientos":
-    st.subheader("📊 Rendimiento Semanal por Vegetal (lbs / Manzana)")
-    st.markdown("Matriz abierta para integrar nuevas columnas de vegetales conforme se requiera.")
-    st.dataframe(df_rendimientos, use_container_width=True)
-
-else:
-    # Simulador Principal
-    st.subheader("🚀 Simulador de Producción por Lote y Ciclo")
-    
-    # Filtramos únicamente los lotes y cultivos que están ACTIVOS
+    # Filtramos únicamente elementos ACTIVOS para la planificación
     lotes_activos = st.session_state.df_lotes[st.session_state.df_lotes["Estado"] == "Activo"]
     cultivos_activos = st.session_state.df_cultivos[st.session_state.df_cultivos["Estado"] == "Activo"]
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        lote_seleccionado = st.selectbox(
-            "Seleccionar Lote Activo", 
-            options=lotes_activos.apply(lambda row: f"{row['Finca']} - {row['Nombre_Lote']} ({row['Area_Manzanas']} mz)", axis=1)
-        )
-    
-    with col2:
-        vegetal_seleccionado = st.selectbox("Seleccionar Vegetal", options=cultivos_activos["Vegetal"].tolist())
-        
-    with col3:
-        semana_cosecha = st.number_input("Semana Programada de Cosecha", min_value=1, max_value=53, value=48)
 
-    # Extraer área del lote seleccionado
-    if not lotes_activos.empty:
-        idx_lote = lotes_activos.apply(lambda row: f"{row['Finca']} - {row['Nombre_Lote']} ({row['Area_Manzanas']} mz)", axis=1).tolist().index(lote_seleccionado)
-        area_real = lotes_activos.iloc[idx_lote]["Area_Manzanas"]
-        finca_nombre = lotes_activos.iloc[idx_lote]["Finca"]
-        lote_nombre = lotes_activos.iloc[idx_lote]["Nombre_Lote"]
+    if lotes_activos.empty:
+        st.warning("⚠️ No hay lotes activos disponibles. Por favor active al menos un lote en la sección de gestión.")
+    elif cultivos_activos.empty:
+        st.warning("⚠️ No hay vegetales activos disponibles.")
     else:
-        area_real = 0.0
-        finca_nombre = ""
-        lote_nombre = ""
+        col1, col2, col3 = st.columns(3)
 
-    # Lógica de Época Fría para el Ejote
-    info_cultivo = cultivos_activos[cultivos_activos["Vegetal"] == vegetal_seleccionado].iloc[0]
-    ciclo_base = info_cultivo["Ciclo_Base_Semanas"]
-    aplica_frio_cultivo = info_cultivo["Aplica_Frio"]
-    
-    # Evaluar si la cosecha cae en época fría
-    es_epoca_fria = False
-    if frio_activo and aplica_frio_cultivo:
-        # Manejo de rangos que pueden cruzar de año (ej: sem 47 a sem 6)
-        if semana_inicio_frio > semana_fin_frio:
-            es_epoca_fria = (semana_cosecha >= semana_inicio_frio) or (semana_cosecha <= semana_fin_frio)
+        with col1:
+            lote_opciones = lotes_activos.apply(lambda r: f"{r['Finca']} ➔ {r['Nombre_Lote']} ({r['Area_Manzanas']} mz)", axis=1).tolist()
+            lote_seleccionado = st.selectbox("Seleccionar Lote Activo", options=lote_opciones)
+
+        with col2:
+            vegetal_seleccionado = st.selectbox("Seleccionar Vegetal", options=cultivos_activos["Vegetal"].tolist())
+
+        with col3:
+            semana_cosecha = st.number_input("Semana Programada de Cosecha", min_value=1, max_value=53, value=48)
+
+        # Extraer datos del lote seleccionado
+        idx_lote = lote_opciones.index(lote_seleccionado)
+        lote_row = lotes_activos.iloc[idx_lote]
+        area_real = lote_row["Area_Manzanas"]
+        finca_nombre = lote_row["Finca"]
+        lote_nombre = lote_row["Nombre_Lote"]
+
+        # Extraer datos del cultivo seleccionado
+        cultivo_row = cultivos_activos[cultivos_activos["Vegetal"] == vegetal_seleccionado].iloc[0]
+        ciclo_base = cultivo_row["Ciclo_Base_Semanas"]
+        aplica_frio_cultivo = cultivo_row["Aplica_Frio"]
+
+        # Lógica de Época Fría (Ejote)
+        es_epoca_fria = False
+        if frio_activo and aplica_frio_cultivo:
+            if semana_inicio_frio > semana_fin_frio:
+                # Cruce de año (ej: semana 48 a semana 6)
+                es_epoca_fria = (semana_cosecha >= semana_inicio_frio) or (semana_cosecha <= semana_fin_frio)
+            else:
+                es_epoca_fria = (semana_inicio_frio <= semana_cosecha <= semana_fin_frio)
+
+        # Ciclo efectivo (+1 semana si aplica frío)
+        ciclo_efectivo = ciclo_base + 1 if es_epoca_fria else ciclo_base
+
+        # Cálculo de semana de siembra (con ajuste circular de 53 semanas)
+        semana_siembra = semana_cosecha - ciclo_efectivo
+        if semana_siembra <= 0:
+            semana_siembra += 53
+
+        # Obtener rendimiento unitario de la matriz
+        if vegetal_seleccionado in df_rendimientos.columns:
+            rendimiento_unitario = df_rendimientos.loc[df_rendimientos["Semana"] == semana_cosecha, vegetal_seleccionado].values[0]
         else:
-            es_epoca_fria = (semana_inicio_frio <= semana_cosecha <= semana_fin_frio)
+            rendimiento_unitario = 0.0
 
-    # Ajuste de ciclo (+1 semana si es ejote en época fría)
-    ciclo_efectivo = ciclo_base + 1 if (es_epoca_fria and aplica_frio_cultivo) else ciclo_base
-    semana_siembra = semana_cosecha - ciclo_efectivo
-    if semana_siembra <= 0:
-        semana_siembra += 53  # Ajuste para ciclo anual circular
+        # Cálculo Total
+        produccion_total = area_real * rendimiento_unitario
 
-    # Obtener rendimiento de la matriz para la semana de cosecha
-    if vegetal_seleccionado in df_rendimientos.columns:
-        rendimiento_unitario = df_rendimientos.loc[df_rendimientos["Semana"] == semana_cosecha, vegetal_seleccionado].values[0]
-    else:
-        rendimiento_unitario = 0.0
+        st.markdown("---")
+        st.subheader("📊 Resultados del Cálculo")
 
-    produccion_total = area_real * rendimiento_unitario
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Ubicación", f"{lote_nombre}", f"{finca_nombre}")
+        m2.metric("Área Real", f"{area_real:,.2f} Manzanas")
+        m3.metric("Ciclo Efectivo", f"{ciclo_efectivo} Semanas", f"{'+1 sem (Frío)' if es_epoca_fria else 'Estándar'}")
+        m4.metric("Siembra ➔ Cosecha", f"Sem. {semana_siembra} ➔ Sem. {semana_cosecha}")
 
-    st.markdown("---")
-    st.markdown("### 📋 Resumen del Ciclo Calculado")
+        r1, r2 = st.columns(2)
+        r1.metric("Rendimiento por Manzana", f"{rendimiento_unitario:,.2f} lbs / mz")
+        r2.metric("Producción Total Estimada", f"{produccion_total:,.2f} lbs")
+
+        if es_epoca_fria:
+            st.info("❄️ **Aviso Estacional:** La cosecha programada cae dentro del período de época fría. El ciclo del ejote se ha extendido automáticamente una semana más para ajustar la fecha de siembra.")
+
+
+elif menu_principal == "🏢 Gestión de Fincas y Lotes":
+    st.subheader("🏢 Catálogo de Fincas y Lotes")
+    st.markdown("Administra las fincas, el tamaño real de los lotes y su estado operativo (Activo/Inactivo).")
     
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Finca / Lote", f"{lote_nombre}", f"{finca_nombre}")
-    m2.metric("Área Real", f"{area_real} Manzanas")
-    m3.metric("Ciclo Efectivo", f"{ciclo_efectivo} Semanas", f"{'+1 sem (Frío)' if (es_epoca_fria and aplica_frio_cultivo) else 'Estándar'}")
-    m4.metric("Semana Siembra Est. -> Cosecha", f"Sem. {semana_siembra} -> Sem. {semana_cosecha}")
+    st.dataframe(st.session_state.df_lotes, use_container_width=True)
 
-    r1, r2 = st.columns(2)
-    r1.metric("Rendimiento por Manzana", f"{rendimiento_unitario:,.2f} lbs/mz")
-    r2.metric("Producción Total Estimada", f"{produccion_total:,.2f} lbs")
+    with st.form("form_nuevo_lote"):
+        st.subheader("➕ Agregar Nuevo Lote")
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            nueva_finca = st.text_input("Nombre de la Finca")
+            nuevo_nombre_lote = st.text_input("Nombre o Código del Lote")
+        with col_f2:
+            nuevo_area = st.number_input("Área Real (Manzanas)", min_value=0.1, value=1.0, step=0.25)
+            nuevo_estado = st.selectbox("Estado Inicial", options=["Activo", "Inactivo"])
+        
+        btn_guardar_lote = st.form_submit_button("Guardar Lote")
+        if btn_guardar_lote and nueva_finca and nuevo_nombre_lote:
+            nuevo_id = f"L-0{len(st.session_state.df_lotes) + 1}"
+            nueva_fila = {
+                "ID_Lote": nuevo_id, 
+                "Finca": nueva_finca, 
+                "Nombre_Lote": nuevo_nombre_lote, 
+                "Area_Manzanas": nuevo_area, 
+                "Estado": nuevo_estado
+            }
+            st.session_state.df_lotes = pd.concat([st.session_state.df_lotes, pd.DataFrame([nueva_fila])], ignore_index=True)
+            st.success(f"¡Lote '{nuevo_nombre_lote}' agregado con éxito!")
+            st.rerun()
+
+
+elif menu_principal == "🥦 Catálogo de Vegetales":
+    st.subheader("🥦 Catálogo Maestro de Vegetales / Cultivos")
+    st.markdown("Los vegetales marcados como **Inactivos** se ocultan de las nuevas proyecciones, pero se conservan intactos para consultar el histórico plurianual de años anteriores.")
     
-    if es_epoca_fria and aplica_frio_cultivo:
-        st.info("❄️ **Aviso de Temporada:** La cosecha cae en período de época fría, por lo que el ciclo del ejote se ha extendido automáticamente una semana más para ajustar la siembra.")
+    st.dataframe(st.session_state.df_cultivos, use_container_width=True)
+
+    with st.form("form_nuevo_vegetal"):
+        st.subheader("➕ Agregar Nuevo Vegetal o Variedad")
+        col_v1, col_v2 = st.columns(2)
+        with col_v1:
+            nom_vegetal = st.text_input("Nombre del Vegetal / Variedad")
+            ciclo_base_v = st.number_input("Ciclo Base (Semanas de Siembra a Cosecha)", min_value=1, value=10)
+        with col_v2:
+            aplica_frio_v = st.checkbox("¿Aplica ajuste de +1 semana en Época Fría?", value=False)
+            estado_v = st.selectbox("Estado del Vegetal", options=["Activo", "Inactivo"])
+
+        btn_guardar_veg = st.form_submit_button("Guardar Vegetal")
+        if btn_guardar_veg and nom_vegetal:
+            nuevo_id_v = f"C-0{len(st.session_state.df_cultivos) + 1}"
+            nueva_fila_veg = {
+                "ID_Cultivo": nuevo_id_v,
+                "Vegetal": nom_vegetal,
+                "Ciclo_Base_Semanas": ciclo_base_v,
+                "Aplica_Frio": aplica_frio_v,
+                "Estado": estado_v
+            }
+            st.session_state.df_cultivos = pd.concat([st.session_state.df_cultivos, pd.DataFrame([nueva_fila_veg])], ignore_index=True)
+            st.success(f"¡Vegetal '{nom_vegetal}' agregado con éxito!")
+            st.rerun()
+
+
+elif menu_principal == "📊 Matriz de Rendimientos":
+    st.subheader("📊 Matriz de Rendimiento Semanal (lbs / Manzana)")
+    st.markdown("Valores base por semana del año. Esta matriz se alimenta de tu archivo Excel y permite calcular la producción multiplicándola por el área real del lote.")
+    st.dataframe(df_rendimientos, use_container_width=True)
