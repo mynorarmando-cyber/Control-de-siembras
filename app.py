@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.1",
+    page_title="Planificación de Siembras — V10.2",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -85,7 +85,6 @@ html_code = """
   th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:50px; min-width:50px; height:45px; font-size:10px; }
   th.sumhead { position:sticky; top:0; left:50px; z-index:10; background:#cbe0d7; color:var(--forest); width:95px; min-width:95px; font-size:10px; font-weight:700; border-right:2px solid var(--forest); }
   
-  /* Ancho ajustado a 45px por columna */
   th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:45px; min-width:45px; max-width:45px;
     font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; }
   th.lotehead .sub { font-size:8.5px; font-weight:normal; color:var(--muted); }
@@ -102,18 +101,32 @@ html_code = """
 
   .cell-val { display:block; width:100%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; font-size:8px; line-height:24px; }
 
-  .popup { position:absolute; z-index:50; background:#fff; border:1px solid var(--line); border-radius:6px;
-    box-shadow:0 6px 20px rgba(0,0,0,.18); padding:6px; min-width:140px; }
-  .popup button { display:block; width:100%; text-align:left; padding:5px 7px; border:none; background:none;
-    cursor:pointer; border-radius:4px; font-size:11px; margin-bottom:2px; }
-  .popup button:hover { background:#f0efe8; }
-  .popup .danger { color: var(--alert); font-weight:600; border-bottom:1px solid var(--line); margin-bottom:4px; padding-bottom:4px; }
+  /* Popup con posición fija optimizada para velocidad y precisión */
+  .popup { 
+    position: fixed; 
+    z-index: 9999; 
+    background: #ffffff; 
+    border: 1px solid var(--forest); 
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.22); 
+    padding: 6px; 
+    width: 150px;
+    animation: fadeIn 0.1s ease-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .popup button { display:block; width:100%; text-align:left; padding:6px 8px; border:none; background:none;
+    cursor:pointer; border-radius:4px; font-size:11px; margin-bottom:2px; font-weight:500; }
+  .popup button:hover { background:#e8f0ec; color: var(--forest); }
+  .popup .danger { color: var(--alert); font-weight:700; border-bottom:1px solid var(--line); margin-bottom:4px; padding-bottom:4px; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Columnas Angostas (45px)</h1>
+    <h1>Planificación de Siembras</h1>
   </header>
 
   <div class="toolbar">
@@ -125,7 +138,7 @@ html_code = """
 
     <div class="tool-section">
       <div class="field-group">
-        <label>📊 Resumen General (Todas)</label>
+        <label>📊 Resumen General</label>
         <div class="field">
           <select id="summaryVegFilter"><option value="">Todos</option></select>
         </div>
@@ -322,7 +335,7 @@ html_code = """
                     
                     var val = harvestValue(act, year, w, l.area);
                     if (val > 0) {
-                      text = Math.round(val); // Número entero directo (ej. 3500)
+                      text = Math.round(val);
                       prodTotal += val;
                     }
                     if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
@@ -365,13 +378,29 @@ html_code = """
 
             var pop = document.createElement('div');
             pop.className = 'popup';
-            pop.style.left = Math.min(e.pageX - document.getElementById('gridWrap').scrollLeft, window.innerWidth - 160) + 'px';
-            pop.style.top = (e.pageY - document.getElementById('gridWrap').scrollTop) + 'px';
+
+            // Cálculo preciso mediante Viewport / Bounding Rect
+            var rect = cell.getBoundingClientRect();
+            var popWidth = 150;
+            var popHeight = 180;
+
+            var left = rect.right + 4;
+            if (left + popWidth > window.innerWidth) {
+              left = rect.left - popWidth - 4;
+            }
+
+            var top = rect.top;
+            if (top + popHeight > window.innerHeight) {
+              top = window.innerHeight - popHeight - 10;
+            }
+
+            pop.style.left = left + 'px';
+            pop.style.top = top + 'px';
 
             if (act) {
               var btnDel = document.createElement('button');
               btnDel.className = 'danger';
-              btnDel.textContent = 'Eliminar ' + act.vegetal;
+              btnDel.textContent = '❌ Eliminar ' + act.vegetal;
               btnDel.onclick = function() {
                 plantings[loteId] = (plantings[loteId] || []).filter(function(p){ return p !== act; });
                 render();
@@ -381,7 +410,7 @@ html_code = """
 
             VEG_ORDER.forEach(function(v) {
               var btn = document.createElement('button');
-              btn.textContent = (act ? 'Cambiar a ' : 'Sembrar ') + v;
+              btn.textContent = (act ? 'Cambiar a ' : '🌱 ') + v;
               btn.onclick = function() {
                 if (act) {
                   act.vegetal = v;
@@ -394,7 +423,7 @@ html_code = """
               pop.appendChild(btn);
             });
 
-            document.getElementById('gridWrap').appendChild(pop);
+            document.body.appendChild(pop);
             activePopup = pop;
           };
 
@@ -437,7 +466,13 @@ html_code = """
         });
       }
 
-      document.getElementById('gridWrap').onclick = function() {
+      document.body.onclick = function(e) {
+        if (activePopup && !activePopup.contains(e.target)) {
+          closePopup();
+        }
+      };
+
+      document.getElementById('gridWrap').onscroll = function() {
         closePopup();
       };
 
