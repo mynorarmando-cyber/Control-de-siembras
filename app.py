@@ -1,6 +1,6 @@
+import os
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title='Cropplaner - Sistema Integral y Catálogos',
@@ -56,13 +56,12 @@ menu_principal = st.selectbox(
 )
 
 if menu_principal == '🌱 Cropplaner Principal (V11.0)':
-  # --- TU CÓDIGO ORIGINAL DE CROPPPLANER V11.0 ---
-  html_code = """
+  html_content = """
     <!DOCTYPE html>
     <html lang="es">
     <head>
     <meta charset="UTF-8">
-    <title>Planificación de Siembras</title>
+    <title>Planificación de Siembras - V11.0</title>
     <style>
       :root {
         --ink: #1b2e26; --paper: #f6f5f0; --panel: #ffffff; --line: #dcd8cc;
@@ -73,69 +72,58 @@ if menu_principal == '🌱 Cropplaner Principal (V11.0)':
         --grano-bg: #fce4d6; --grano-fg: #833c00;
         --china-bg: #e4dfec; --china-fg: #5f3f7a;
         --dulce-bg: #fff2cc; --dulce-fg: #7f6000;
-        --inherited-bg: #fff3cd; --inherited-fg: #856404; --inherited-border: #ffeeba;
       }
       * { box-sizing: border-box; }
       html, body { margin:0; padding:0; background: var(--paper); color: var(--ink);
-        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; height: 100%; overflow: hidden; }
-      #app { display:flex; flex-direction:column; height:100vh; }
-      header { background: var(--forest); color: #fff; padding: 10px 18px;
-        display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-      header h1 { font-size: 16px; margin:0; font-weight:600; }
-      .toolbar { background: var(--panel); border-bottom:1px solid var(--line); padding:8px 14px;
-        display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; height: 100vh; overflow: hidden; }
+      #app { display:flex; flex-direction:column; height:100vh; width:100vw; }
+      header { background: var(--forest); color: #fff; padding: 8px 16px; display:flex; align-items:center; justify-content:space-between; }
+      header h1 { font-size: 15px; margin:0; font-weight:600; }
+      .toolbar { background: var(--panel); border-bottom:1px solid var(--line); padding:6px 12px;
+        display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
       .tool-section { display:flex; align-items:center; gap:6px; }
-      .tool-divider { width:1px; height:24px; background:var(--line); margin:0 2px; }
+      .tool-divider { width:1px; height:22px; background:var(--line); margin:0 2px; }
       .tabs { display:flex; gap:3px; }
-      .tab { padding:4px 9px; border-radius:5px; border:1px solid var(--line); background:#fff;
+      .tab { padding:4px 10px; border-radius:4px; border:1px solid var(--line); background:#fff;
         cursor:pointer; font-size:11px; font-weight:600; }
       .tab.active { background: var(--forest); color:#fff; border-color:var(--forest); }
       .field-group { display:flex; flex-direction:column; gap:1px; }
-      .field-group label { font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--forest); }
-      .field select { padding:3px 6px; border:1px solid var(--line);
-        border-radius:5px; font-size:11px; background:#fff; color: var(--ink); font-weight:500; }
-      .multi-year-selector { display:flex; gap:6px; align-items:center; background:#f0efe8; padding:3px 6px; border-radius:5px; border:1px solid var(--line); }
-      .multi-year-selector label { font-size:10.5px; cursor:pointer; display:flex; align-items:center; gap:2px; }
-      .stat { background:#f0efe8; border:1px solid var(--line); border-radius:6px; padding:3px 8px; }
-      .stat b { font-size:12px; color: var(--forest); display:block; }
-      .stat span { font-size:9px; color:var(--muted); text-transform:uppercase; }
-      .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); min-height: 500px; }
+      .field-group label { font-size:9px; font-weight:700; text-transform:uppercase; color:var(--forest); }
+      .field select { padding:2px 4px; border:1px solid var(--line); border-radius:4px; font-size:11px; background:#fff; }
+      .stat { background:#f0efe8; border:1px solid var(--line); border-radius:4px; padding:2px 6px; text-align:right; }
+      .stat b { font-size:11px; color: var(--forest); display:block; }
+      .stat span { font-size:8.5px; color:var(--muted); text-transform:uppercase; }
+      .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); width:100%; height: calc(100vh - 90px); }
       table.grid { border-collapse:collapse; table-layout:fixed; width: max-content; }
       table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; padding:0; }
-      th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:50px; min-width:50px; height:45px; font-size:10px; }
-      th.sumhead { position:sticky; top:0; left:50px; z-index:10; background:#cbe0d7; color:var(--forest); width:95px; min-width:95px; font-size:10px; font-weight:700; border-right:2px solid var(--forest); }
-      th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:45px; min-width:45px; max-width:45px;
-        font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; }
-      th.lotehead.is-split { background: var(--split-head); color: var(--split-head-fg); border-bottom: 2px solid #bce8f1; }
-      th.lotehead .sub { font-size:8.5px; font-weight:normal; color:var(--muted); display:flex; align-items:center; justify-content:center; gap:2px; }
-      .expand-btn { background:none; border:none; cursor:pointer; font-size:9px; padding:0 2px; color:var(--forest); font-weight:bold; }
-      tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:11px; text-align:left; padding:3px 8px; position:sticky; left:0; z-index:9; }
-      td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:50px; min-width:50px; font-weight:600; font-size:10px; height:24px; }
-      td.sumcell { position:sticky; left:50px; z-index:7; background:#e4f0ec; width:95px; min-width:95px; font-weight:700; font-size:10px; height:24px; border-right:2px solid var(--forest); color:var(--forest); }
-      td.cell { width:45px; min-width:45px; max-width:45px; height:24px; cursor:pointer; font-size:8.5px; position:relative; user-select:none; overflow:hidden; }
+      th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:45px; min-width:45px; height:40px; font-size:9.5px; }
+      th.sumhead { position:sticky; top:0; left:45px; z-index:10; background:#cbe0d7; color:var(--forest); width:85px; min-width:85px; font-size:9.5px; font-weight:700; border-right:2px solid var(--forest); }
+      th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:42px; min-width:42px; max-width:42px; font-weight:700; font-size:9.5px; padding:2px 1px; }
+      th.lotehead .sub { font-size:8px; font-weight:normal; color:var(--muted); }
+      tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:10.5px; text-align:left; padding:3px 8px; position:sticky; left:0; z-index:9; }
+      td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:45px; min-width:45px; font-weight:600; font-size:9.5px; height:22px; }
+      td.sumcell { position:sticky; left:45px; z-index:7; background:#e4f0ec; width:85px; min-width:85px; font-weight:700; font-size:9.5px; height:22px; border-right:2px solid var(--forest); color:var(--forest); }
+      td.cell { width:42px; min-width:42px; max-width:42px; height:22px; cursor:pointer; font-size:8px; position:relative; user-select:none; }
       td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; z-index:5; }
-      td.cell.planted { font-weight:700; cursor:grab; }
-      td.cell.inherited-occupancy { background-color: var(--inherited-bg); color: var(--inherited-fg); font-style: italic; border: 1px dashed var(--inherited-border); }
-      td.cell.long-gap { background-color: var(--gap-bg); color: var(--alert); font-weight: 600; }
-      .cell-val { display:block; width:100%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; font-size:8px; line-height:24px; }
+      td.cell.Ejote { background-color: var(--ejote-bg); color: var(--ejote-fg); font-weight:700; }
+      td.cell.Broccoli { background-color: var(--broccoli-bg); color: var(--broccoli-fg); font-weight:700; }
+      td.cell.Grano { background-color: var(--grano-bg); color: var(--grano-fg); font-weight:700; }
+      td.cell.China { background-color: var(--china-bg); color: var(--china-fg); font-weight:700; }
+      td.cell.Dulce { background-color: var(--dulce-bg); color: var(--dulce-fg); font-weight:700; }
+      .cell-val { display:block; width:100%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; line-height:22px; }
     </style>
     </head>
     <body>
     <div id="app">
       <header>
-        <h1>Planificación de Siembras — V11.0 (Original)</h1>
+        <h1>Planificación de Siembras — V11.0</h1>
       </header>
       <div class="toolbar">
         <div class="tool-section"><div class="tabs" id="fincaTabs"></div></div>
         <div class="tool-divider"></div>
-        <div class="tool-section"><div class="field-group"><label>📊 Resumen General</label><div class="field"><select id="summaryVegFilter"><option value="">Todos</option></select></div></div></div>
-        <div class="tool-divider"></div>
-        <div class="tool-section"><div class="field-group"><label>🌱 Matriz Planificación</label><div class="field"><select id="loteVegFilter"><option value="">Ver Todos</option></select></div></div></div>
-        <div class="tool-divider"></div>
-        <div class="tool-section"><div class="field-group"><label>📅 Años</label><div class="multi-year-selector" id="yearCheckboxes"></div></div></div>
+        <div class="tool-section"><div class="field-group"><label>🌱 Filtrar Vegetal</label><div class="field"><select id="vegFilter"><option value="">Todos</option><option value="Ejote">Ejote</option><option value="Broccoli">Broccoli</option><option value="Grano">Grano</option><option value="China">China</option><option value="Dulce">Dulce</option></select></div></div></div>
         <div class="tool-section" style="margin-left:auto;">
-          <div class="stat"><b id="statArea">0</b><span>Área (ha)</span></div>
-          <div class="stat"><b id="statProd">0</b><span>Prod. Total</span></div>
+          <div class="stat"><b id="statArea">0.0 ha</b><span>Área Total</span></div>
         </div>
       </div>
       <div class="grid-wrap" id="gridWrap"></div>
@@ -143,38 +131,101 @@ if menu_principal == '🌱 Cropplaner Principal (V11.0)':
     <script>
     (function() {
       function init() {
-        var AVAILABLE_YEARS = [2025, 2026, 2027, 2028];
-        var selectedYears = [2026, 2027];
-        var CICLOS = {
-          Ejote:    { duracionBase: 11, cosechas: [[10,0.35],[11,0.42],[12,0.23]], color:'ejote' },
-          Broccoli: { duracionBase: 15, cosechas: [[10,0.10],[11,0.20],[12,0.17],[13,0.10],[14,0.23],[15,0.20]], color:'broccoli' },
-          Grano:    { duracionBase: 14, cosechas: [[11,0.30],[12,0.36],[13,0.24],[14,0.10]], color:'grano' },
-          China:    { duracionBase: 13, cosechas: [[10,0.11],[11,0.45],[12,0.37],[13,0.07]], color:'china' },
-          Dulce:    { duracionBase: 14, cosechas: [[11,0.10],[12,0.20],[13,0.41],[14,0.29]], color:'dulce' }
-        };
+        var YEARS = [2026, 2027];
         var FINCAS = ['NP','CH','TM','PV','SM'];
-        var BASE_LOTES = [];
-        var areaSeed = [1.0, 1.2, 0.8, 1.5, 1.1, 0.9, 1.3, 1.4];
-        var idCounter = 1;
+        var LOTES = [];
+        var idC = 1;
         FINCAS.forEach(function(f) {
-          var count = (f === 'NP') ? 40 : 30;
+          var count = (f === 'NP') ? 40 : 20;
           for (var i = 1; i <= count; i++) {
-            BASE_LOTES.push({ id: f + '-' + i, finca: f, nombre: f + '-' + i, area: areaSeed[idCounter % areaSeed.length] });
-            idCounter++;
+            LOTES.push({ id: f + '-' + i, finca: f, nombre: f + '-' + i, area: 1.0 });
+            idC++;
           }
         });
-        var plantings = {'NP-1': [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}]};
-        var currentFinca = 'NP';
         
+        var plantings = {
+          'NP-1': [{year: 2026, weekInYear: 5, vegetal: 'Broccoli'}],
+          'NP-2': [{year: 2026, weekInYear: 8, vegetal: 'Ejote'}],
+          'NP-3': [{year: 2026, weekInYear: 12, vegetal: 'Grano'}]
+        };
+        
+        var currentFinca = 'NP';
+        var selectedVeg = '';
+
         function render() {
           var tabsWrap = document.getElementById('fincaTabs');
-          tabsWrap.innerHTML = FINCAS.map(function(f){ return '<div class="tab ' + (currentFinca===f?'active':'') + '" data-finca="' + f + '">' + f + '</div>'; }).join('');
+          tabsWrap.innerHTML = FINCAS.map(function(f){ 
+            return '<div class="tab ' + (currentFinca===f?'active':'') + '" data-finca="' + f + '">' + f + '</div>'; 
+          }).join('');
           tabsWrap.querySelectorAll('.tab').forEach(function(btn) {
             btn.onclick = function() { currentFinca = btn.dataset.finca; render(); };
           });
-          var wrap = document.getElementById('gridWrap');
-          wrap.innerHTML = '<div style="padding: 20px; font-weight: bold; color: var(--forest);">Mostrando Finca: ' + currentFinca + ' (Matriz activa)</div>';
+
+          var filteredLotes = LOTES.filter(function(l){ return l.finca === currentFinca; });
+
+          var html = '<table class="grid"><thead><tr>';
+          html += '<th class="corner">Sem \\ Lote</th>';
+          html += '<th class="sumhead">Total Prod</th>';
+          
+          filteredLotes.forEach(function(l) {
+            html += '<th class="lotehead">' + l.nombre + '<div class="sub">' + l.area + 'h</div></th>';
+          });
+          html += '</tr></thead><tbody>';
+
+          YEARS.forEach(function(year) {
+            html += '<tr class="year-divider"><td colspan="' + (filteredLotes.length + 2) + '">AÑO ' + year + '</td></tr>';
+            for (var w = 1; w <= 52; w++) {
+              html += '<tr>';
+              html += '<td class="weekcell">S' + w + '</td>';
+              html += '<td class="sumcell">-</td>';
+
+              filteredLotes.forEach(function(l) {
+                var pList = plantings[l.id] || [];
+                var matched = pList.find(function(p){ return p.year === year && p.weekInYear === w; });
+                var cssClass = matched ? ('cell ' + matched.vegetal) : 'cell';
+                var valStr = matched ? matched.vegetal.substring(0,3).toUpperCase() : '';
+                
+                if (selectedVeg && matched && matched.vegetal !== selectedVeg) {
+                  cssClass += ' dimmed';
+                }
+
+                html += '<td class="' + cssClass + '" data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">';
+                html += '<span class="cell-val">' + valStr + '</span>';
+                html += '</td>';
+              });
+              html += '</tr>';
+            }
+          });
+          html += '</tbody></table>';
+
+          document.getElementById('gridWrap').innerHTML = html;
+          document.getElementById('statArea').innerText = (filteredLotes.length * 1.0).toFixed(1) + ' ha';
+
+          document.querySelectorAll('.grid td.cell').forEach(function(td) {
+            td.onclick = function() {
+              var lid = td.dataset.lote;
+              var yr = parseInt(td.dataset.year);
+              var wk = parseInt(td.dataset.week);
+              
+              if (!plantings[lid]) plantings[lid] = [];
+              var idx = plantings[lid].findIndex(function(p){ return p.year === yr && p.weekInYear === wk; });
+              
+              const vegList = ['Broccoli', 'Ejote', 'Grano', 'China', 'Dulce'];
+              if (idx >= 0) {
+                plantings[lid].splice(idx, 1);
+              } else {
+                plantings[lid].push({year: yr, weekInYear: wk, vegetal: vegList[Math.floor(Math.random() * vegList.length)]});
+              }
+              render();
+            };
+          });
         }
+
+        document.getElementById('vegFilter').onchange = function(e) {
+          selectedVeg = e.target.value;
+          render();
+        };
+
         render();
       }
       if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
@@ -183,7 +234,13 @@ if menu_principal == '🌱 Cropplaner Principal (V11.0)':
     </body>
     </html>
     """
-  components.html(html_code, height=750, scrolling=True)
+
+  # Guardar temporalmente el HTML para servirlo de forma moderna y limpia con st.iframe
+  html_file_path = 'cropplaner_temp.html'
+  with open(html_file_path, 'w', encoding='utf-8') as f:
+    f.write(html_content)
+
+  st.iframe(html_file_path, height=850, scrolling=True)
 
 elif menu_principal == '📂 Catálogo de Fincas y Lotes (Áreas Reales)':
   st.subheader('🌱 Gestión de Catálogo de Fincas y Lotes con Áreas Reales')
@@ -192,7 +249,6 @@ elif menu_principal == '📂 Catálogo de Fincas y Lotes (Áreas Reales)':
       ' **agregar una nueva finca** con sus respectivos lotes.'
   )
 
-  # Selector o creador de fincas
   finca_gestion = st.selectbox(
       'Seleccionar Finca a Editar',
       ['NP (Finca Principal 1-40)', 'CH', 'TM', 'PV', 'SM', '➕ Agregar Nueva Finca'],
@@ -212,13 +268,8 @@ elif menu_principal == '📂 Catálogo de Fincas y Lotes (Áreas Reales)':
     finc_key = finca_gestion.split(' ')[0]
     st.markdown(f'### Lotes de la Finca: {finc_key}')
 
-    # Simulación de editor para los lotes de la finca seleccionada
-    if finc_key == 'NP':
-      num_lotes = 40
-      prefix = 'NP'
-    else:
-      num_lotes = 30
-      prefix = finc_key
+    num_lotes = 40 if finc_key == 'NP' else 20
+    prefix = finc_key
 
     if f'lotes_{finc_key}' not in st.session_state:
       st.session_state[f'lotes_{finc_key}'] = pd.DataFrame({
