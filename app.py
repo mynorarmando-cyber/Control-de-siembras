@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V9.2",
+    page_title="Planificación de Siembras — V9.4",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -37,10 +37,8 @@ html_code = """
     --panel: #ffffff;
     --line: #dcd8cc;
     --forest: #1f4e3d;
-    --forest-dim: #3a6b57;
     --muted: #6b7268;
     --alert: #b3261e;
-    --alert-bg: #fbdedc;
     --ejote-bg: #ddebf7; --ejote-fg: #1f4e79;
     --broccoli-bg: #e2efda; --broccoli-fg: #375623;
     --grano-bg: #fce4d6; --grano-fg: #833c00;
@@ -56,18 +54,25 @@ html_code = """
     display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
   header h1 { font-size: 17px; margin:0; font-weight:600; }
 
+  /* Toolbar estilizada con separadores claros */
   .toolbar { background: var(--panel); border-bottom:1px solid var(--line); padding:10px 18px;
-    display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  
+  .tool-section { display:flex; align-items:center; gap:8px; }
+  .tool-divider { width:1px; height:28px; background:var(--line); margin:0 4px; }
+  
   .tabs { display:flex; gap:4px; }
   .tab { padding:5px 11px; border-radius:6px; border:1px solid var(--line); background:#fff;
     cursor:pointer; font-size:12px; font-weight:500; }
   .tab.active { background: var(--forest); color:#fff; border-color:var(--forest); }
   
-  .field { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
-  .field select { padding:4px 7px; border:1px solid var(--line);
-    border-radius:6px; font-size:12px; background:#fff; color: var(--ink); }
+  .field-group { display:flex; flex-direction:column; gap:2px; }
+  .field-group label { font-size:10px; font-weight:700; text-transform:uppercase; color:var(--forest); }
+  
+  .field select { padding:4px 8px; border:1px solid var(--line);
+    border-radius:6px; font-size:12px; background:#fff; color: var(--ink); font-weight:500; }
 
-  .multi-year-selector { display:flex; gap:8px; align-items:center; background:#f0efe8; padding:3px 8px; border-radius:6px; border:1px solid var(--line); }
+  .multi-year-selector { display:flex; gap:8px; align-items:center; background:#f0efe8; padding:4px 8px; border-radius:6px; border:1px solid var(--line); }
   .multi-year-selector label { font-size:11px; cursor:pointer; display:flex; align-items:center; gap:3px; }
 
   .stat { background:#f0efe8; border:1px solid var(--line); border-radius:7px; padding:4px 10px; }
@@ -111,18 +116,50 @@ html_code = """
   </header>
 
   <div class="toolbar">
-    <div class="tabs" id="fincaTabs"></div>
-    <div class="field">Sumar Resumen:
-      <select id="summaryVegFilter"><option value="">Todos los vegetales</option></select>
+    <!-- Pestañas Finca -->
+    <div class="tool-section">
+      <div class="tabs" id="fincaTabs"></div>
     </div>
-    <div class="field">Filtrar Lotes:
-      <select id="loteVegFilter"><option value="">Ver Todos</option></select>
+
+    <div class="tool-divider"></div>
+
+    <!-- Sección 1: Filtro Resumen General (Todas las Fincas) -->
+    <div class="tool-section">
+      <div class="field-group">
+        <label>📊 Resumen General (Todas las Fincas)</label>
+        <div class="field">
+          <select id="summaryVegFilter"><option value="">Todos los vegetales</option></select>
+        </div>
+      </div>
     </div>
-    <div class="field">Años:
-      <div class="multi-year-selector" id="yearCheckboxes"></div>
+
+    <div class="tool-divider"></div>
+
+    <!-- Sección 2: Filtro Matriz / Área de Planificación -->
+    <div class="tool-section">
+      <div class="field-group">
+        <label>🌱 Matriz de Planificación</label>
+        <div class="field">
+          <select id="loteVegFilter"><option value="">Ver Todos</option></select>
+        </div>
+      </div>
     </div>
-    <div class="stat"><b id="statArea">0</b><span>Área (ha)</span></div>
-    <div class="stat"><b id="statProd">0</b><span>Prod. Proyectada</span></div>
+
+    <div class="tool-divider"></div>
+
+    <!-- Años -->
+    <div class="tool-section">
+      <div class="field-group">
+        <label>📅 Años</label>
+        <div class="multi-year-selector" id="yearCheckboxes"></div>
+      </div>
+    </div>
+
+    <!-- Estadísticas -->
+    <div class="tool-section" style="margin-left:auto;">
+      <div class="stat"><b id="statArea">0</b><span>Área (ha)</span></div>
+      <div class="stat"><b id="statProd">0</b><span>Prod. Proyectada</span></div>
+    </div>
   </div>
 
   <div class="grid-wrap" id="gridWrap"></div>
