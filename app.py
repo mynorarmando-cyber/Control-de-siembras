@@ -1,323 +1,115 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+import numpy as np
 
-st.set_page_config(
-    page_title="Matriz Agrícola Interactiva",
-    page_icon="🌾",
-    layout="wide"
-)
+# Configuración de página
+st.set_page_config(page_title="Planificación Agrícola", layout="wide")
 
-# ---------------------------------------------------------
-# ESTILOS CSS PARA MEJORAR LEGIBILIDAD
-# ---------------------------------------------------------
-st.markdown("""
-    <style>
-    .ag-theme-alpine .ag-cell {
-        font-size: 13px !important;
-        font-weight: 600 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding-left: 8px !important;
-        padding-right: 8px !important;
+st.title("🌾 Planificador Agrícola Multi-Año")
+
+# 1. BASE DE DATOS SIMULADA (DATOS MAESTROS)
+@st.cache_data
+def cargar_datos_maestros():
+    fincas_lotes = {
+        "Finca El Roble": [
+            {"id": "NP01A", "ha": 2.5},
+            {"id": "NP01B", "ha": 2.5},
+            {"id": "NP02", "ha": 6.0},
+            {"id": "NP03", "ha": 4.0}
+        ],
+        "Finca San José": [
+            {"id": "SJ01", "ha": 8.0},
+            {"id": "SJ02", "ha": 5.5}
+        ]
     }
-    .ag-theme-alpine .ag-header-cell-label {
-        font-size: 14px !important;
-        font-weight: bold !important;
-        justify-content: center !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.title("🌾 Matriz Semanal de Planificación Agrícola")
-st.caption("Selecciona el vegetal en la semana de inicio. La tabla expandirá dinámicamente todo el ciclo y marcará en rojo si existe solapamiento.")
-
-# ---------------------------------------------------------
-# 1. PARÁMETROS DE CULTIVOS Y CURVAS DE COSECHA
-# ---------------------------------------------------------
-if 'vegetales_db' not in st.session_state:
-    st.session_state['vegetales_db'] = {
-        'Ejote': {
-            'duracion_total': 11,
-            'descanso_post': 2,
-            'cosecha_pct': {9: 0.30, 10: 0.45, 11: 0.25}
-        },
-        'Broccoli': {
-            'duracion_total': 14,
-            'descanso_post': 3,
-            'cosecha_pct': {11: 0.20, 12: 0.50, 13: 0.30}
-        },
-        'Zucchini': {
-            'duracion_total': 10,
-            'descanso_post': 2,
-            'cosecha_pct': {7: 0.30, 8: 0.40, 9: 0.30}
-        }
-    }
-
-RENDIMIENTO_BASE_KG_HA = 11000
-
-# Lotes Iniciales Base
-LOTES_BASE = [
-    {'Finca': 'TM', 'Lote': 'Lote 1', 'Area_Ha': 1.05},
-    {'Finca': 'TM', 'Lote': 'Lote 2', 'Area_Ha': 0.80},
-    {'Finca': 'NP', 'Lote': 'NP-1', 'Area_Ha': 1.20},
-    {'Finca': 'CH', 'Lote': 'CH-8', 'Area_Ha': 0.90},
-]
-
-# ---------------------------------------------------------
-# 2. INICIALIZAR SIEMBRAS BASE Y ESTRUCTURA
-# ---------------------------------------------------------
-if 'siembras_origen' not in st.session_state:
-    st.session_state['siembras_origen'] = {
-        ('TM', 'Lote 1', 2): 'Ejote',
-        ('TM', 'Lote 2', 5): 'Broccoli'
-    }
-
-# Pestañas de la Aplicación
-tab_matriz, tab_config_veg, tab_config_lotes = st.tabs([
-    "📋 Matriz Dinámica Unificada (S1 a S52)", 
-    "🌱 Gestionar Vegetales y Curvas", 
-    "🚜 Gestionar Fincas y Lotes"
-])
-
-# =========================================================
-# PESTAÑA 1: MATRIZ DINÁMICA DE ENTRADA Y PROYECCIÓN
-# =========================================================
-with tab_matriz:
     
-    # ---------------------------------------------------------
-    # CONSTRUCCIÓN DE LA MATRIZ CALCULADA EN TIEMPO REAL
-    # ---------------------------------------------------------
-    registros_cosecha = []
-    conflictos = []
-    filas_matriz = []
-
-    for l in LOTES_BASE:
-        finca = l['Finca']
-        lote = l['Lote']
-        area = l['Area_Ha']
-        
-        fila_res = {'Finca': finca, 'Lote': lote, 'Área (Ha)': area}
-        mapa_semanas = {s: [] for s in range(1, 53)}
-        
-        # 1. Proyectar todos los ciclos desde las siembras registradas
-        for (f, lt, sem_inicio), vegetal in st.session_state['siembras_origen'].items():
-            if f == finca and lt == lote and vegetal in st.session_state['vegetales_db']:
-                cfg = st.session_state['vegetales_db'][vegetal]
-                dur_total = cfg['duracion_total'] + cfg['descanso_post']
-                
-                for sem_rel, sem_abs in enumerate(range(sem_inicio, min(sem_inicio + dur_total, 53)), start=1):
-                    if sem_rel == 1:
-                        mapa_semanas[sem_abs].append(f"🌱 {vegetal}")
-                    elif sem_rel in cfg['cosecha_pct']:
-                        pct = cfg['cosecha_pct'][sem_rel]
-                        kg = area * RENDIMIENTO_BASE_KG_HA * pct
-                        mapa_semanas[sem_abs].append(f"🟢 {int(kg):,} Kg")
-                        
-                        registros_cosecha.append({
-                            'Semana': sem_abs,
-                            'Lote': f"{finca}-{lote}",
-                            'Cultivo': vegetal,
-                            'Producción_Kg': kg
-                        })
-                    elif sem_rel <= cfg['duracion_total']:
-                        mapa_semanas[sem_abs].append("▫️ Dev")
-                    else:
-                        mapa_semanas[sem_abs].append("🧹 Descanso")
-
-        # 2. Consolidar celdas y detectar choques/solapamientos
-        for s in range(1, 53):
-            eventos = mapa_semanas[s]
-            if len(eventos) > 1:
-                conflictos.append(f"⚠️ Solapamiento en **{finca}-{lote}**, Semana {s}.")
-                fila_res[f"S{s}"] = "🔴 CHOQUE"
-            elif len(eventos) == 1:
-                fila_res[f"S{s}"] = eventos[0]
-            else:
-                fila_res[f"S{s}"] = ""
-                
-        filas_matriz.append(fila_res)
-
-    df_matriz_unificada = pd.DataFrame(filas_matriz)
-
-    # ---------------------------------------------------------
-    # CONFIGURACIÓN VISUAL Y AUTO-AJUSTE DE AGGRID
-    # ---------------------------------------------------------
-    gb = GridOptionsBuilder.from_dataframe(df_matriz_unificada)
-    gb.configure_default_column(editable=True, groupable=True)
-
-    # Estrategia de Auto-Ajuste Automático por Contenido
-    gb.configure_grid_options(
-        rowHeight=55,
-        headerHeight=45,
-        autoSizeStrategy={
-            'type': 'fitCellContents',   # Ajusta cada columna al texto más largo
-            'defaultMinWidth': 85        # Ancho mínimo para semanas vacías
-        }
-    )
-
-    # Columnas fijas de la izquierda
-    gb.configure_column("Finca", editable=False, pinned="left")
-    gb.configure_column("Lote", editable=False, pinned="left")
-    gb.configure_column("Área (Ha)", editable=False, pinned="left")
-
-    # Estilos dinámicos JS por tipo de estado
-    cell_style_js = JsCode("""
-    function(params) {
-        var baseStyle = {'fontSize': '13px', 'fontWeight': 'bold'};
-        if (!params.value) return baseStyle;
-        var val = params.value.toString();
-        
-        if (val.includes("🔴") || val.includes("CHOQUE")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#fee2e2', 'color': '#991b1b'});
-        } else if (val.includes("🌱")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#dcfce7', 'color': '#166534'});
-        } else if (val.includes("🟢")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#bbf7d0', 'color': '#14532d'});
-        } else if (val.includes("▫️")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#f3f4f6', 'color': '#374151'});
-        } else if (val.includes("🧹")) {
-            return Object.assign(baseStyle, {'backgroundColor': '#fef3c7', 'color': '#92400e'});
-        }
-        return baseStyle;
+    # Matriz de rendimiento por vegetal y semana de siembra
+    # (Vegetal, Semana) -> (Semanas Ciclo, Rendimiento Ton/Ha)
+    rendimientos = {
+        "Brócoli": {"ciclo": 9, "rendimiento_base": 45.0},
+        "Ejote": {"ciclo": 7, "rendimiento_base": 12.0},
+        "Arveja": {"ciclo": 10, "rendimiento_base": 15.0}
     }
-    """)
+    return fincas_lotes, rendimientos
 
-    # Desplegable de selección de vegetales para las 52 semanas
-    opciones_vegetales = [""] + list(st.session_state['vegetales_db'].keys())
+fincas_lotes, catálogo_rendimientos = cargar_datos_maestros()
 
-    for s in range(1, 53):
-        gb.configure_column(
-            f"S{s}",
-            cellEditor='agSelectCellEditor',
-            cellEditorParams={'values': opciones_vegetales},
-            cellStyle=cell_style_js
-        )
+# 2. PANEL DE FILTROS SUPERIOR
+st.sidebar.header("🔍 Filtros de Control")
 
-    grid_options = gb.build()
+finca_sel = st.sidebar.selectbox("Seleccionar Finca", list(fincas_lotes.keys()))
+anios_sel = st.sidebar.multiselect("Años a Visualizar", [2026, 2027], default=[2026, 2027])
+vegetales_sel = st.sidebar.multiselect("Vegetales Visibles", list(catálogo_rendimientos.keys()), default=list(catálogo_rendimientos.keys()))
 
-    st.subheader("📋 Matriz Única de Planificación y Proyección (S1 - S52)")
-    st.caption("Las columnas ajustan su ancho automáticamente según el contenido (vegetal, kilos o texto).")
+lotes_disponibles = [l["id"] for l in fincas_lotes[finca_sel]]
+lotes_sel = st.sidebar.multiselect("Lotes Visibles", lotes_disponibles, default=lotes_disponibles)
 
-    grid_response = AgGrid(
-        df_matriz_unificada,
-        gridOptions=grid_options,
-        update_mode=GridUpdateMode.VALUE_CHANGED,
-        allow_unsafe_jscode=True,
-        fit_columns_on_grid_load=False,
-        height=400
-    )
+# 3. GENERACIÓN DE MATRIZ DE SEMANAS CONTINUAS
+semanas_lista = []
+for anio in sorted(anios_sel):
+    for sem in range(1, 53):
+        semanas_lista.append(f"{anio}-S{sem:02d}")
 
-    # ---------------------------------------------------------
-    # PROCESAR CAMBIOS DEL USUARIO Y REGENERAR SIEMBRAS
-    # ---------------------------------------------------------
-    df_modificado = pd.DataFrame(grid_response['data'])
-    
-    # Detectar nuevas siembras creadas o modificadas por el usuario
-    nuevas_siembras = {}
-    
-    for idx, row in df_modificado.iterrows():
-        finca = str(row['Finca'])
-        lote = str(row['Lote'])
-        for s in range(1, 53):
-            val = str(row[f"S{s}"]).strip()
+# Crear DataFrame base
+columnas = lotes_sel + ["TOTAL COSECHA FINCA (Ton)"]
+df_matriz = pd.DataFrame("", index=semanas_lista, columns=columnas)
+
+# Inicializar estado de siembras en sesión
+if "planificacion" not in st.session_state:
+    st.session_state.planificacion = [
+        {"lote": "NP01A", "semana_siembra": "2026-S49", "vegetal": "Brócoli"},
+        {"lote": "NP02", "semana_siembra": "2026-S10", "vegetal": "Ejote"}
+    ]
+
+# 4. CÁLCULO DINÁMICO DE COSECHAS
+totales_semanales = {sem: 0.0 for sem in semanas_lista}
+
+for plan in st.session_state.planificacion:
+    if plan["lote"] in lotes_sel and plan["vegetal"] in vegetales_sel:
+        lote_info = next(l for l in fincas_lotes[finca_sel] if l["id"] == plan["lote"])
+        veg_info = catálogo_rendimientos[plan["vegetal"]]
+        
+        sem_siembra = plan["semana_siembra"]
+        if sem_siembra in df_matriz.index:
+            df_matriz.loc[sem_siembra, plan["lote"]] = f"🌱 {plan['vegetal']}"
             
-            # Si el usuario eligió un vegetal directamente o seleccionó '🌱 Vegetal'
-            if val in st.session_state['vegetales_db']:
-                nuevas_siembras[(finca, lote, s)] = val
-            elif val.startswith("🌱 "):
-                veg_extraido = val.replace("🌱 ", "").strip()
-                if veg_extraido in st.session_state['vegetales_db']:
-                    nuevas_siembras[(finca, lote, s)] = veg_extraido
+            # Cálculo de semana de cosecha
+            anio_s, num_s = int(sem_siembra.split("-S")[0]), int(sem_siembra.split("-S")[1])
+            num_cosecha = num_s + veg_info["ciclo"]
+            anio_cosecha = anio_s
+            if num_cosecha > 52:
+                num_cosecha -= 52
+                anio_cosecha += 1
+                
+            sem_cosecha = f"{anio_cosecha}-S{num_cosecha:02d}"
+            volumen = lote_info["ha"] * veg_info["rendimiento_base"]
+            
+            if sem_cosecha in df_matriz.index:
+                df_matriz.loc[sem_cosecha, plan["lote"]] = f"🌽 {volumen:.1f} t"
+                totales_semanales[sem_cosecha] += volumen
 
-    # Si hubo cambios en la programación de siembras, actualizar estado y recargar
-    if nuevas_siembras != st.session_state['siembras_origen']:
-        st.session_state['siembras_origen'] = nuevas_siembras
-        st.rerun()
+# Asignar totales calculados
+for sem in semanas_lista:
+    df_matriz.loc[sem, "TOTAL COSECHA FINCA (Ton)"] = f"{totales_semanales[sem]:.1f} t"
 
-    # Alertar conflictos en pantalla
-    if conflictos:
-        st.error("🚨 **CONFLICTOS DETECTADOS EN LA PROGRAMACIÓN:**")
-        for c in set(conflictos):
-            st.warning(c)
+# 5. VISUALIZACIÓN
+st.subheader(f"Vista Panorámica: {finca_sel}")
+st.dataframe(df_matriz, use_container_width=True, height=600)
 
-    # ---------------------------------------------------------
-    # GRÁFICA DE LA CURVA CONSOLIDADA
-    # ---------------------------------------------------------
-    st.divider()
-    st.subheader("📈 Curva Total Consolidada de Cosecha (Semanas 1 a 52)")
+# Formulario rápido para programar/cambiar siembras
+st.markdown("---")
+st.subheader("⚡ Programación Rápida de Siembra")
+col1, col2, col3, col4 = st.columns(4)
 
-    df_cosecha = pd.DataFrame(registros_cosecha)
-
-    if not df_cosecha.empty:
-        df_totales = df_cosecha.groupby('Semana')['Producción_Kg'].sum().reset_index()
-        df_full = pd.DataFrame({'Semana': range(1, 53)})
-        df_totales = pd.merge(df_full, df_totales, on='Semana', how='left').fillna(0)
-        
-        fig = px.area(
-            df_totales, x='Semana', y='Producción_Kg',
-            title="Volumen Semanal Cosechado Consolidado (Kg Totales)",
-            labels={'Producción_Kg': 'Kg Cosechados', 'Semana': 'Semana del Año'},
-            markers=True
-        )
-        fig.update_traces(line_color='#059669', fillcolor='rgba(5, 150, 105, 0.25)')
-        fig.update_xaxes(dtick=1)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No hay cosechas programadas para graficar.")
-
-# =========================================================
-# PESTAÑA 2: GESTIONAR VEGETALES Y CURVAS
-# =========================================================
-with tab_config_veg:
-    st.subheader("🌱 Configuración de Vegetales y Curvas de Cosecha")
-    
-    col_v1, col_v2 = st.columns([1, 1])
-    
-    with col_v1:
-        st.markdown("### Agregar / Modificar Vegetal")
-        nuevo_nombre = st.text_input("Nombre del Vegetal (ej. Arveja, China, etc.):")
-        dur_t = st.number_input("Duración total del ciclo (Semanas):", min_value=1, value=11)
-        dur_d = st.number_input("Semanas de descanso post-cosecha:", min_value=0, value=2)
-        
-        st.markdown("**Porcentajes de Cosecha por Semana del Ciclo:**")
-        s1 = st.number_input("Semana Cosecha 1:", value=9)
-        p1 = st.number_input("% Cosecha 1 (ej. 0.30):", value=0.30)
-        
-        s2 = st.number_input("Semana Cosecha 2:", value=10)
-        p2 = st.number_input("% Cosecha 2 (ej. 0.45):", value=0.45)
-        
-        s3 = st.number_input("Semana Cosecha 3:", value=11)
-        p3 = st.number_input("% Cosecha 3 (ej. 0.25):", value=0.25)
-        
-        if st.button("💾 Guardar Vegetal", type="primary"):
-            if nuevo_nombre:
-                st.session_state['vegetales_db'][nuevo_nombre] = {
-                    'duracion_total': int(dur_t),
-                    'descanso_post': int(dur_d),
-                    'cosecha_pct': {int(s1): p1, int(s2): p2, int(s3): p3}
-                }
-                st.success(f"Vegetal '{nuevo_nombre}' agregado a la lista.")
-                st.rerun()
-
-    with col_v2:
-        st.markdown("### Vegetales Habilitados Activos")
-        st.json(st.session_state['vegetales_db'])
-
-# =========================================================
-# PESTAÑA 3: GESTIONAR FINCAS Y LOTES
-# =========================================================
-with tab_config_lotes:
-    st.subheader("🚜 Gestión de Lotes y Fincas")
-    st.caption("Puedes modificar los lotes o hectáreas de trabajo:")
-    
-    df_lotes_actual = pd.DataFrame(LOTES_BASE)
-    
-    df_lotes_editado = st.data_editor(
-        df_lotes_actual,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor_fincas_lotes"
-    )
+with col1:
+    nuevo_lote = st.selectbox("Lote", lotes_sel)
+with col2:
+    nueva_sem = st.selectbox("Semana Siembra", semanas_lista)
+with col3:
+    nuevo_veg = st.selectbox("Vegetal", list(catálogo_rendimientos.keys()))
+with col4:
+    if st.button("Guardar Siembra"):
+        # Remover siembra previa en ese lote/semana si existe
+        st.session_state.planificacion = [p for p in st.session_state.planificacion if not (p["lote"] == nuevo_lote and p["semana_siembra"] == nueva_sem)]
+        st.session_state.planificacion.append({"lote": nuevo_lote, "semana_siembra": nueva_sem, "vegetal": nuevo_veg})
+        st.experimental_rerun()
