@@ -15,11 +15,9 @@ st.markdown("---")
 # 1. INICIALIZACIÓN DE ESTADOS (SESSION STATE)
 # ==========================================
 
-# A. Catálogo Maestro de Fincas y Lotes (Generación automática NP, SM, PV, TM, CH + opción nueva finca)
+# A. Catálogo Maestro de Fincas y Lotes (NP 1-40, SM/PV/TM/CH 1-30)
 if "df_lotes" not in st.session_state:
     lotes_iniciales = []
-    
-    # Definir estructuras estándar solicitadas
     config_fincas = [
         {"finca": "NP", "rango": 40, "area_default": 2.0},
         {"finca": "SM", "rango": 30, "area_default": 2.5},
@@ -42,7 +40,7 @@ if "df_lotes" not in st.session_state:
             
     st.session_state.df_lotes = pd.DataFrame(lotes_iniciales)
 
-# B. Catálogo Maestro de Cultivos / Vegetales (Baja lógica para proteger históricos)
+# B. Catálogo Maestro de Cultivos / Vegetales
 if "df_cultivos" not in st.session_state:
     st.session_state.df_cultivos = pd.DataFrame(
         [
@@ -72,12 +70,20 @@ if "df_rendimientos" not in st.session_state:
             "Grano": [8250]*53
         })
 
-# D. Rendimiento por vegetal (Segunda hoja o estructura relacionada)
+# D. Rendimiento por Vegetal (amarrado al ciclo y semanas)
 if "df_rendimiento_vegetal" not in st.session_state:
     try:
         st.session_state.df_rendimiento_vegetal = pd.read_excel("Siesa Plan.xlsx", sheet_name="Rendimiento por vegetal")
     except Exception:
-        st.session_state.df_rendimiento_vegetal = pd.DataFrame(columns=["Semana", "Ejote", "Brocoli", "China", "Dulce", "Grano"])
+        semanas = list(range(1, 54))
+        st.session_state.df_rendimiento_vegetal = pd.DataFrame({
+            "Semana": semanas,
+            "Ejote": [0.35]*53,
+            "Brocoli": [0.20]*53,
+            "China": [0.45]*53,
+            "Dulce": [0.10]*53,
+            "Grano": [0.30]*53
+        })
 
 
 # ==========================================
@@ -94,7 +100,7 @@ st.sidebar.markdown("---")
 menu_principal = st.sidebar.radio(
     "Navegación", 
     [
-        "🚀 Simulador / Planificador de Siembra", 
+        "📋 Planificador de Siembra", 
         "🏢 Gestión de Fincas y Lotes", 
         "🥦 Catálogo de Vegetales", 
         "📊 Matriz de Rendimientos",
@@ -107,93 +113,107 @@ menu_principal = st.sidebar.radio(
 # 3. VISTAS DE LA APLICACIÓN
 # ==========================================
 
-if menu_principal == "🚀 Simulador / Planificador de Siembra":
-    st.subheader("🚀 Simulador y Planificador General de Siembra")
-    st.markdown("Selecciona el lote (filtrado por finca) y el vegetal para calcular la siembra, el ciclo efectivo y la producción total basada en el área real.")
+if menu_principal == "📋 Planificador de Siembra":
+    st.subheader("📋 Planificador General de Fincas y Lotes")
+    st.markdown("Visualiza tus lotes, selecciona el vegetal y la semana de cosecha. El sistema calcula automáticamente la **semana de siembra**, el **ciclo efectivo** (con ajuste de frío si aplica) y la **producción total en libras**.")
+
+    # Filtro opcional por Finca
+    fincas_disponibles = sorted(st.session_state.df_lotes["Finca"].unique().tolist())
+    finca_filtro = st.selectbox("🔍 Filtrar vista por Finca:", options=["Todas las Fincas"] + fincas_disponibles)
 
     lotes_activos = st.session_state.df_lotes[st.session_state.df_lotes["Estado"] == "Activo"]
-    cultivos_activos = st.session_state.df_cultivos[st.session_state.df_cultivos["Estado"] == "Activo"]
-
-    if lotes_activos.empty:
-        st.warning("⚠️ No hay lotes activos disponibles. Por favor actívalos en el gestor de lotes.")
-    elif cultivos_activos.empty:
-        st.warning("⚠️ No hay vegetales activos disponibles.")
+    if finca_filtro != "Todas las Fincas":
+        lotes_visibles = lotes_activos[lotes_activos["Finca"] == finca_filtro]
     else:
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            fincas_disponibles = sorted(lotes_activos["Finca"].unique().tolist())
-            finca_elegida = st.selectbox("Filtrar por Finca", options=fincas_disponibles)
-        
-        lotes_filtrados = lotes_activos[lotes_activos["Finca"] == finca_elegida]
-        
-        col1, col2, col3 = st.columns(3)
+        lotes_visibles = lotes_activos
 
-        with col1:
-            lote_opciones = lotes_filtrados.apply(lambda r: f"{r['Nombre_Lote']} ({r['Area_Manzanas']} mz)", axis=1).tolist()
-            lote_seleccionado = st.selectbox("Seleccionar Lote", options=lote_opciones)
+    st.markdown("### Asignación de Cultivos y Cosechas por Lote")
+    
+    plan_data = []
+    for _, row in lotes_visibles.iterrows():
+        plan_data.append({
+            "Finca": row["Finca"],
+            "Lote": row["Nombre_Lote"],
+            "Área (mz)": row["Area_Manzanas"],
+            "Vegetal": "Ejote",
+            "Sem. Cosecha": 48
+        })
+    
+    df_plan_editable = st.data_editor(
+        pd.DataFrame(plan_data),
+        num_rows="dynamic",
+        use_container_width=True,
+        key="tabla_planificador"
+    )
 
-        with col2:
-            vegetal_seleccionado = st.selectbox("Seleccionar Vegetal", options=cultivos_activos["Vegetal"].tolist())
-
-        with col3:
-            semana_cosecha = st.number_input("Semana Programada de Cosecha", min_value=1, max_value=53, value=48)
-
-        # Extraer datos del lote seleccionado
-        lote_row = lotes_filtrados.iloc[lote_opciones.index(lote_seleccionado)]
-        area_real = lote_row["Area_Manzanas"]
-        lote_nombre = lote_row["Nombre_Lote"]
-
-        # Extraer datos del cultivo seleccionado
-        cultivo_row = cultivos_activos[cultivos_activos["Vegetal"] == vegetal_seleccionado].iloc[0]
-        ciclo_base = cultivo_row["Ciclo_Base_Semanas"]
-        aplica_frio_cultivo = cultivo_row["Aplica_Frio"]
-
-        # Lógica de Época Fría (Ejote)
-        es_epoca_fria = False
-        if frio_activo and aplica_frio_cultivo:
-            if semana_inicio_frio > semana_fin_frio:
-                es_epoca_fria = (semana_cosecha >= semana_inicio_frio) or (semana_cosecha <= semana_fin_frio)
-            else:
-                es_epoca_fria = (semana_inicio_frio <= semana_cosecha <= semana_fin_frio)
-
-        ciclo_efectivo = ciclo_base + 1 if es_epoca_fria else ciclo_base
-
-        semana_siembra = semana_cosecha - ciclo_efectivo
-        if semana_siembra <= 0:
-            semana_siembra += 53
-
-        # Obtener rendimiento unitario
-        df_rend = st.session_state.df_rendimientos
-        rendimiento_unitario = 0.0
-        if vegetal_seleccionado in df_rend.columns:
-            match_rend = df_rend.loc[df_rend.iloc[:, 0] == semana_cosecha, vegetal_seleccionado]
-            if not match_rend.empty:
-                rendimiento_unitario = float(match_rend.values[0])
-
-        produccion_total = area_real * rendimiento_unitario
-
+    if not df_plan_editable.empty:
         st.markdown("---")
-        st.subheader("📊 Resultados del Plan de Siembra")
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Finca / Lote", f"{finca_elegida} - {lote_nombre}")
-        m2.metric("Área Real", f"{area_real:,.2f} Manzanas")
-        m3.metric("Ciclo Efectivo", f"{ciclo_efectivo} Semanas", f"{'+1 sem (Frío)' if es_epoca_fria else 'Estándar'}")
-        m4.metric("Siembra ➔ Cosecha", f"Sem. {semana_siembra} ➔ Sem. {semana_cosecha}")
-
-        r1, r2 = st.columns(2)
-        r1.metric("Rendimiento por Manzana", f"{rendimiento_unitario:,.2f} lbs / mz")
-        r2.metric("Producción Total Estimada", f"{produccion_total:,.2f} lbs")
-
-        if es_epoca_fria:
-            st.info("❄️ **Aviso Estacional:** La cosecha programada cae en época fría. El ciclo del ejote se ha extendido automáticamente una semana más.")
+        st.subheader("📊 Resultados Calculados")
+        
+        resultados = []
+        df_rend = st.session_state.df_rendimientos
+        
+        for _, row in df_plan_editable.iterrows():
+            finca = row["Finca"]
+            lote = row["Lote"]
+            area = row["Área (mz)"]
+            vegetal = row["Vegetal"]
+            sem_cosecha = int(row["Sem. Cosecha"])
+            
+            cultivo_info = st.session_state.df_cultivos[st.session_state.df_cultivos["Vegetal"] == vegetal]
+            if not cultivo_info.empty:
+                ciclo_base = int(cultivo_info.iloc[0]["Ciclo_Base_Semanas"])
+                aplica_frio = bool(cultivo_info.iloc[0]["Aplica_Frio"])
+            else:
+                ciclo_base = 10
+                aplica_frio = False
+                
+            es_frio = False
+            if frio_activo and aplica_frio:
+                if semana_inicio_frio > semana_fin_frio:
+                    es_frio = (sem_cosecha >= semana_inicio_frio) or (sem_cosecha <= semana_fin_frio)
+                else:
+                    es_frio = (semana_inicio_frio <= sem_cosecha <= semana_fin_frio)
+                    
+            ciclo_efectivo = ciclo_base + 1 if es_frio else ciclo_base
+            
+            sem_siembra = sem_cosecha - ciclo_efectivo
+            if sem_siembra <= 0:
+                sem_siembra += 53
+                
+            rend_unitario = 0.0
+            if vegetal in df_rend.columns:
+                match_r = df_rend.loc[df_rend.iloc[:, 0] == sem_cosecha, vegetal]
+                if not match_r.empty:
+                    rend_unitario = float(match_r.values[0])
+                    
+            prod_total = area * rend_unitario
+            
+            resultados.append({
+                "Finca": finca,
+                "Lote": lote,
+                "Área (mz)": area,
+                "Vegetal": vegetal,
+                "Sem. Siembra": sem_siembra,
+                "Sem. Cosecha": sem_cosecha,
+                "Ciclo (Sem)": ciclo_efectivo,
+                "Rend. (lbs/mz)": rend_unitario,
+                "Producción Total (lbs)": prod_total,
+                "Época Fría": "Sí (+1 sem)" if es_frio else "No"
+            })
+            
+        df_resultados = pd.DataFrame(resultados)
+        st.dataframe(df_resultados, use_container_width=True)
+        
+        total_libras = df_resultados["Producción Total (lbs)"].sum()
+        total_area = df_resultados["Área (mz)"].sum()
+        st.success(f"📌 **Resumen General:** Área Total: **{total_area:,.2f} Manzanas** | Producción Estimada: **{total_libras:,.2f} Libras**")
 
 
 elif menu_principal == "🏢 Gestión de Fincas y Lotes":
     st.subheader("🏢 Catálogo y Gestor de Fincas y Lotes")
-    st.markdown("Aquí puedes **modificar directamente** los datos de los lotes existentes (Finca, Nombre, Área, Estado) o agregar nuevas fincas y lotes personalizados.")
+    st.markdown("Aquí encuentras cargados todos tus lotes oficiales (**NP 1-40, SM 1-30, PV 1-30, TM 1-30, CH 1-30**). Puedes editarlos o agregar nuevas fincas y lotes.")
 
-    # Tabla editable interactiva
     df_lotes_editado = st.data_editor(st.session_state.df_lotes, num_rows="dynamic", use_container_width=True, key="editor_lotes")
     st.session_state.df_lotes = df_lotes_editado
 
@@ -201,13 +221,12 @@ elif menu_principal == "🏢 Gestión de Fincas y Lotes":
         st.subheader("➕ Agregar Nueva Finca o Lote Individual")
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            # Opción de escribir una nueva finca o seleccionar una existente
             fincas_actuales = st.session_state.df_lotes["Finca"].unique().tolist()
             nueva_finca = st.selectbox("Finca (Seleccionar o escribir nueva)", options=fincas_actuales + ["+ Nueva Finca"])
             if nueva_finca == "+ Nueva Finca":
-                nueva_finca = st.text_input("Escriba el nombre/código de la Nueva Finca (Ej. LP, Xela, etc.)")
+                nueva_finca = st.text_input("Escriba el nombre/código de la Nueva Finca")
             
-            nuevo_nombre_lote = st.text_input("Nombre o Código del Lote (Ej. Lote 41)")
+            nuevo_nombre_lote = st.text_input("Nombre o Código del Lote (Ej. Lote 31)")
         with col_f2:
             nuevo_area = st.number_input("Área Real (Manzanas)", min_value=0.1, value=2.0, step=0.25)
             nuevo_estado = st.selectbox("Estado Inicial", options=["Activo", "Inactivo"])
@@ -229,7 +248,7 @@ elif menu_principal == "🏢 Gestión de Fincas y Lotes":
 
 elif menu_principal == "🥦 Catálogo de Vegetales":
     st.subheader("🥦 Catálogo Maestro de Vegetales / Cultivos")
-    st.markdown("Administra los vegetales, sus ciclos base y su estado.")
+    st.markdown("Administra los vegetales, sus ciclos base y su estado (baja lógica para proteger históricos).")
     
     df_cultivos_editado = st.data_editor(st.session_state.df_cultivos, num_rows="dynamic", use_container_width=True, key="editor_cultivos")
     st.session_state.df_cultivos = df_cultivos_editado
@@ -261,15 +280,15 @@ elif menu_principal == "🥦 Catálogo de Vegetales":
 
 elif menu_principal == "📊 Matriz de Rendimientos":
     st.subheader("📊 Matriz de Rendimiento Semanal (Editable)")
-    st.markdown("Modifica directamente los valores de rendimiento por semana para cada vegetal, o agrega columnas de nuevos vegetales según lo necesites.")
+    st.markdown("Modifica directamente los valores de rendimiento por semana para cada vegetal. Puedes agregar nuevos vegetales simplemente añadiendo nuevas columnas en la tabla.")
     
     df_rend_editado = st.data_editor(st.session_state.df_rendimientos, num_rows="dynamic", use_container_width=True, key="editor_rendimientos")
     st.session_state.df_rendimientos = df_rend_editado
 
 
 elif menu_principal == "📈 Rendimiento por Vegetal":
-    st.subheader("📈 Rendimiento por Vegetal")
-    st.markdown("Visualización y gestión detallada de los rendimientos específicos por vegetal vinculados al plan.")
+    st.subheader("📈 Rendimiento por Vegetal (Amarrado al Ciclo)")
+    st.markdown("Control específico del rendimiento por vegetal vinculado a las semanas de desarrollo del cultivo.")
     
     df_rv_editado = st.data_editor(st.session_state.df_rendimiento_vegetal, num_rows="dynamic", use_container_width=True, key="editor_rend_vegetal")
     st.session_state.df_rendimiento_vegetal = df_rv_editado
