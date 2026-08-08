@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.2",
+    page_title="Planificación de Siembras — V10.3",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -98,10 +98,10 @@ html_code = """
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; z-index:5; }
   td.cell.planted { font-weight:700; cursor:grab; }
   td.cell.dragover { outline:2px dashed var(--forest); outline-offset:-2px; background:#e2f0d9 !important; }
+  td.cell.drag-error { outline:2px dashed var(--alert) !important; background:#fbeae8 !important; cursor:not-allowed !important; }
 
   .cell-val { display:block; width:100%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; font-size:8px; line-height:24px; }
 
-  /* Popup con posición fija optimizada para velocidad y precisión */
   .popup { 
     position: fixed; 
     z-index: 9999; 
@@ -110,7 +110,7 @@ html_code = """
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.22); 
     padding: 6px; 
-    width: 150px;
+    width: 160px;
     animation: fadeIn 0.1s ease-out;
   }
   @keyframes fadeIn {
@@ -119,14 +119,16 @@ html_code = """
   }
   .popup button { display:block; width:100%; text-align:left; padding:6px 8px; border:none; background:none;
     cursor:pointer; border-radius:4px; font-size:11px; margin-bottom:2px; font-weight:500; }
-  .popup button:hover { background:#e8f0ec; color: var(--forest); }
+  .popup button:hover:not(:disabled) { background:#e8f0ec; color: var(--forest); }
+  .popup button:disabled { opacity: 0.4; cursor: not-allowed; }
   .popup .danger { color: var(--alert); font-weight:700; border-bottom:1px solid var(--line); margin-bottom:4px; padding-bottom:4px; }
+  .popup .msg-occupied { font-size: 10px; color: var(--alert); padding: 4px 6px; font-weight: 600; text-align: center; background: #fbeae8; border-radius: 4px; margin-bottom: 4px; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras</h1>
+    <h1>Planificación de Siembras — Sin Traslape de Cultivos</h1>
   </header>
 
   <div class="toolbar">
@@ -245,6 +247,30 @@ html_code = """
         return null;
       }
 
+      /* Función clave: Verifica si colocar un vegetal en (year, weekInYear) entra en conflicto con siembras previas o futuras */
+      function canPlant(loteId, year, weekInYear, vegName, ignorePlanting) {
+        var cycle = CICLOS[vegName];
+        if (!cycle) return false;
+
+        var startAbs = absWeek(year, weekInYear);
+        var endAbs = startAbs + cycle.duracion - 1;
+
+        var list = plantings[loteId] || [];
+        for (var i = 0; i < list.length; i++) {
+          var p = list[i];
+          if (ignorePlanting && p === ignorePlanting) continue;
+
+          var existingStart = absWeek(p.year, p.weekInYear);
+          var existingEnd = existingStart + CICLOS[p.vegetal].duracion - 1;
+
+          // Conflicto de traslape entre intervalos [startAbs, endAbs] y [existingStart, existingEnd]
+          if (startAbs <= existingEnd && endAbs >= existingStart) {
+            return false;
+          }
+        }
+        return true;
+      }
+
       function harvestValue(planting, year, weekInYear, area){
         var c = CICLOS[planting.vegetal];
         if (!c) return 0;
@@ -343,7 +369,7 @@ html_code = """
                 }
 
                 tableHtml += '<td class="cell ' + (act && !isHiddenByLoteFilter ? 'planted' : '') + '" style="' + cellStyle + '" ' +
-                  'draggable="' + (act ? 'true' : 'false') + '" ' +
+                  'draggable="' + (act && act.year === year && act.weekInYear === w ? 'true' : 'false') + '" ' +
                   'data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">' +
                   (isHiddenByLoteFilter ? '' : '<span class="cell-val">' + text + '</span>') +
                 '</td>';
@@ -379,10 +405,9 @@ html_code = """
             var pop = document.createElement('div');
             pop.className = 'popup';
 
-            // Cálculo preciso mediante Viewport / Bounding Rect
             var rect = cell.getBoundingClientRect();
-            var popWidth = 150;
-            var popHeight = 180;
+            var popWidth = 160;
+            var popHeight = 210;
 
             var left = rect.right + 4;
             if (left + popWidth > window.innerWidth) {
@@ -406,13 +431,31 @@ html_code = """
                 render();
               };
               pop.appendChild(btnDel);
+
+              // Si hizo clic en medio del ciclo pero no en la semana exacta de inicio
+              if (act.year !== yr || act.weekInYear !== wk) {
+                var msg = document.createElement('div');
+                msg.className = 'msg-occupied';
+                msg.textContent = 'Espacio ocupado por ' + act.vegetal;
+                pop.appendChild(msg);
+              }
             }
 
             VEG_ORDER.forEach(function(v) {
+              var isStartWeek = act && act.year === yr && act.weekInYear === wk;
+              var isAllowed = canPlant(loteId, yr, wk, v, isStartWeek ? act : null);
+
               var btn = document.createElement('button');
-              btn.textContent = (act ? 'Cambiar a ' : '🌱 ') + v;
+              btn.textContent = (isStartWeek ? 'Cambiar a ' : '🌱 ') + v;
+              btn.disabled = !isAllowed;
+
+              if (!isAllowed && (!act || !isStartWeek)) {
+                btn.title = "Conflicto: No hay espacio suficiente para el ciclo de " + v;
+              }
+
               btn.onclick = function() {
-                if (act) {
+                if (!isAllowed) return;
+                if (isStartWeek) {
                   act.vegetal = v;
                 } else {
                   if (!plantings[loteId]) plantings[loteId] = [];
@@ -432,7 +475,9 @@ html_code = """
             var yr = parseInt(cell.dataset.year);
             var wk = parseInt(cell.dataset.week);
             var act = findActive(loteId, yr, wk);
-            if (act) {
+            
+            // Solo se permite arrastrar desde la celda de inicio del cultivo
+            if (act && act.year === yr && act.weekInYear === wk) {
               dragSource = { loteId: loteId, planting: act };
               e.dataTransfer.setData('text/plain', '');
             } else {
@@ -442,23 +487,51 @@ html_code = """
 
           cell.ondragover = function(e) {
             e.preventDefault();
-            cell.classList.add('dragover');
+            if (!dragSource) return;
+
+            var targetLote = cell.dataset.lote;
+            var targetYr = parseInt(cell.dataset.year);
+            var targetWk = parseInt(cell.dataset.week);
+
+            var isValid = canPlant(targetLote, targetYr, targetWk, dragSource.planting.vegetal, dragSource.planting);
+
+            if (isValid) {
+              cell.classList.add('dragover');
+              cell.classList.remove('drag-error');
+            } else {
+              cell.classList.add('drag-error');
+              cell.classList.remove('dragover');
+            }
           };
 
           cell.ondragleave = function() {
             cell.classList.remove('dragover');
+            cell.classList.remove('drag-error');
           };
 
           cell.ondrop = function(e) {
             e.preventDefault();
             cell.classList.remove('dragover');
+            cell.classList.remove('drag-error');
             if (!dragSource) return;
 
+            var targetLote = cell.dataset.lote;
             var targetYr = parseInt(cell.dataset.year);
             var targetWk = parseInt(cell.dataset.week);
 
-            dragSource.planting.year = targetYr;
-            dragSource.planting.weekInYear = targetWk;
+            var isValid = canPlant(targetLote, targetYr, targetWk, dragSource.planting.vegetal, dragSource.planting);
+
+            if (isValid) {
+              // Mover a nuevo lote y/o fecha
+              if (dragSource.loteId !== targetLote) {
+                plantings[dragSource.loteId] = (plantings[dragSource.loteId] || []).filter(function(p){ return p !== dragSource.planting; });
+                if (!plantings[targetLote]) plantings[targetLote] = [];
+                plantings[targetLote].push(dragSource.planting);
+              }
+
+              dragSource.planting.year = targetYr;
+              dragSource.planting.weekInYear = targetWk;
+            }
 
             dragSource = null;
             render();
