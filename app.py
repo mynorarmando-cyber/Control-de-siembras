@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.5",
+    page_title="Planificación de Siembras — V10.6",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -40,6 +40,8 @@ html_code = """
     --muted: #6b7268;
     --alert: #b3261e;
     --gap-bg: #fdf2f2;
+    --split-head: #d9edf7; /* Color distintivo para lotes partidos */
+    --split-head-fg: #1d394a;
     --ejote-bg: #ddebf7; --ejote-fg: #1f4e79;
     --broccoli-bg: #e2efda; --broccoli-fg: #375623;
     --grano-bg: #fce4d6; --grano-fg: #833c00;
@@ -89,7 +91,9 @@ html_code = """
   th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:45px; min-width:45px; max-width:45px;
     font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; cursor:pointer; }
   th.lotehead:hover { background:#e2e0d5; }
+  th.lotehead.is-split { background: var(--split-head); color: var(--split-head-fg); border-bottom: 2px solid #bce8f1; }
   th.lotehead .sub { font-size:8.5px; font-weight:normal; color:var(--muted); }
+  th.lotehead.is-split .sub { color: #31708f; }
   
   tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:11px; text-align:left; padding:3px 8px; position:sticky; left:0; z-index:9; }
 
@@ -113,7 +117,7 @@ html_code = """
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.22); 
     padding: 6px; 
-    width: 170px;
+    width: 180px;
     animation: fadeIn 0.1s ease-out;
   }
   @keyframes fadeIn {
@@ -132,7 +136,7 @@ html_code = """
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Partición y Gestión de Lotes</h1>
+    <h1>Planificación de Siembras — Lotes Partidos y Ciclos Flexibles</h1>
   </header>
 
   <div class="toolbar">
@@ -221,9 +225,7 @@ html_code = """
         }
       });
 
-      // Registro de particiones activas: { 'NP-1': { parentId: 'NP-1', subA: {id:'NP-1A', area:0.5}, subB: {id:'NP-1B', area:0.5} } }
       var partitions = {};
-
       var plantings = {};
       plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}, {year: 2026, weekInYear: 20, vegetal: 'Broccoli'}];
       plantings['NP-5'] = [{year: 2026, weekInYear: 4, vegetal: 'Ejote'}];
@@ -241,7 +243,6 @@ html_code = """
         return (year - 2020) * 52 + weekInYear;
       }
 
-      // Obtiene la lista actual de lotes desplegados considerando particiones
       function getActiveLotesForFinca(fincaName) {
         var result = [];
         var fincaBase = BASE_LOTES.filter(function(l) { return l.finca === fincaName; });
@@ -249,10 +250,10 @@ html_code = """
         fincaBase.forEach(function(l) {
           if (partitions[l.id]) {
             var p = partitions[l.id];
-            result.push({ id: p.subA.id, finca: fincaName, nombre: p.subA.id, area: p.subA.area, parentId: l.id });
-            result.push({ id: p.subB.id, finca: fincaName, nombre: p.subB.id, area: p.subB.area, parentId: l.id });
+            result.push({ id: p.subA.id, finca: fincaName, nombre: p.subA.id, area: p.subA.area, parentId: l.id, isSplit: true });
+            result.push({ id: p.subB.id, finca: fincaName, nombre: p.subB.id, area: p.subB.area, parentId: l.id, isSplit: true });
           } else {
-            result.push({ id: l.id, finca: fincaName, nombre: l.nombre, area: l.area, parentId: null });
+            result.push({ id: l.id, finca: fincaName, nombre: l.nombre, area: l.area, parentId: null, isSplit: false });
           }
         });
         return result;
@@ -384,7 +385,8 @@ html_code = """
         var tableHtml = '<table class="grid"><thead><tr><th class="corner">Sem.</th><th class="sumhead">' + sumColHeader + '</th>';
         
         activeLotes.forEach(function(l) {
-          tableHtml += '<th class="lotehead" data-lotid="' + l.id + '" title="Clic para partir o gestionar lote">' + l.nombre + '<div class="sub">' + l.area + 'ha</div></th>';
+          var splitClass = l.isSplit ? ' is-split' : '';
+          tableHtml += '<th class="lotehead' + splitClass + '" data-lotid="' + l.id + '" title="Clic para gestionar partición">' + l.nombre + '<div class="sub">' + l.area + 'ha</div></th>';
         });
         tableHtml += '</tr></thead><tbody>';
 
@@ -452,14 +454,12 @@ html_code = """
       }
 
       function bindGridEvents() {
-        // Evento para encabezados de lotes (Partir / Unificar)
         document.querySelectorAll('th.lotehead').forEach(function(th) {
           th.onclick = function(e) {
             e.stopPropagation();
             closePopup();
 
             var lotId = th.dataset.lotid;
-            // Determinar si es un sub-lote (ej. NP-1A) o base (NP-1)
             var baseLotId = lotId;
             var isSub = false;
             if (lotId.endsWith('A') || lotId.endsWith('B')) {
@@ -474,7 +474,7 @@ html_code = """
             pop.className = 'popup';
 
             var rect = th.getBoundingClientRect();
-            pop.style.left = Math.min(rect.left, window.innerWidth - 180) + 'px';
+            pop.style.left = Math.min(rect.left, window.innerWidth - 190) + 'px';
             pop.style.top = (rect.bottom + 4) + 'px';
 
             var titleDiv = document.createElement('div');
@@ -496,7 +496,6 @@ html_code = """
                   subA: { id: baseLotId + 'A', area: halfArea },
                   subB: { id: baseLotId + 'B', area: halfArea }
                 };
-                // Migrar siembras previas al subA por defecto si existen
                 if (plantings[baseLotId]) {
                   plantings[baseLotId + 'A'] = plantings[baseLotId];
                   delete plantings[baseLotId];
@@ -506,11 +505,11 @@ html_code = """
               pop.appendChild(btnSplit);
             } else {
               var parentKey = isSub ? baseLotId : lotId;
+              
               var btnMerge = document.createElement('button');
               btnMerge.className = 'danger';
-              btnMerge.textContent = '🔗 Unificar / Revertir';
+              btnMerge.textContent = '🔗 Unificar para ciclo completo';
               btnMerge.onclick = function() {
-                // Combinar siembras de A y B de vuelta al padre
                 var combined = [];
                 if (plantings[parentKey + 'A']) combined = combined.concat(plantings[parentKey + 'A']);
                 if (plantings[parentKey + 'B']) combined = combined.concat(plantings[parentKey + 'B']);
@@ -545,7 +544,7 @@ html_code = """
             pop.className = 'popup';
 
             var rect = cell.getBoundingClientRect();
-            var popWidth = 170;
+            var popWidth = 180;
             var popHeight = 220;
 
             var left = rect.right + 4;
