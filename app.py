@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Planificación de Siembras — V9.2",
@@ -7,6 +6,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Estilos globales para limpiar márgenes de Streamlit
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
@@ -81,8 +81,8 @@ html_code = """
   button.ghost { background:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 10px;
     font-size:12px; cursor:pointer; }
 
-  .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); }
-  table.grid { border-collapse:collapse; table-layout:fixed; }
+  .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); min-height: 600px; }
+  table.grid { border-collapse:collapse; table-layout:fixed; width: 100%; }
   table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; }
   
   th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:70px; min-width:70px; height:50px; }
@@ -145,233 +145,223 @@ html_code = """
     <button class="primary" id="exportBtn">Exportar Excel</button>
   </div>
 
-  <div class="grid-wrap" id="gridWrap"></div>
+  <div class="grid-wrap" id="gridWrap">Cargando tabla de planificación...</div>
 </div>
 
 <div id="modalWrap"></div>
 
 <script>
-try {
-  var AVAILABLE_YEARS = [2025, 2026, 2027, 2028];
-  var selectedYears = [2026, 2027];
+window.onload = function() {
+  try {
+    var AVAILABLE_YEARS = [2025, 2026, 2027, 2028];
+    var selectedYears = [2026, 2027];
 
-  var CICLOS = {
-    Ejote:    { duracion: 12, cosechas: [[10,0.35],[11,0.42],[12,0.23]], rendimiento: 11500, color:'ejote' },
-    Broccoli: { duracion: 15, cosechas: [[10,0.10],[11,0.20],[12,0.17],[13,0.10],[14,0.23],[15,0.20]], rendimiento: 8000, color:'broccoli' },
-    Grano:    { duracion: 14, cosechas: [[11,0.30],[12,0.36],[13,0.24],[14,0.10]], rendimiento: 8500, color:'grano' },
-    China:    { duracion: 13, cosechas: [[10,0.11],[11,0.45],[12,0.37],[13,0.07]], rendimiento: 7500, color:'china' },
-    Dulce:    { duracion: 14, cosechas: [[11,0.10],[12,0.20],[13,0.41],[14,0.29]], rendimiento: 10000, color:'dulce' }
-  };
+    var CICLOS = {
+      Ejote:    { duracion: 12, cosechas: [[10,0.35],[11,0.42],[12,0.23]], rendimiento: 11500, color:'ejote' },
+      Broccoli: { duracion: 15, cosechas: [[10,0.10],[11,0.20],[12,0.17],[13,0.10],[14,0.23],[15,0.20]], rendimiento: 8000, color:'broccoli' },
+      Grano:    { duracion: 14, cosechas: [[11,0.30],[12,0.36],[13,0.24],[14,0.10]], rendimiento: 8500, color:'grano' },
+      China:    { duracion: 13, cosechas: [[10,0.11],[11,0.45],[12,0.37],[13,0.07]], rendimiento: 7500, color:'china' },
+      Dulce:    { duracion: 14, cosechas: [[11,0.10],[12,0.20],[13,0.41],[14,0.29]], rendimiento: 10000, color:'dulce' }
+    };
 
-  function getVegetableStyle(vegName) {
-    var c = CICLOS[vegName];
-    if (c && c.color) {
-      return 'background:var(--' + c.color + '-bg);color:var(--' + c.color + '-fg);';
-    }
-    return 'background: #e0e0e0; color: #000;';
-  }
-
-  var VEG_ORDER = Object.keys(CICLOS);
-  var FINCAS = ['NP','CH','TM','PV','SM'];
-
-  var LOTES = [];
-  function initLotes() {
-    LOTES = [];
-    var areaSeed = [1.0, 1.2, 0.8, 1.5, 1.1];
-    var idCounter = 1;
-    FINCAS.forEach(function(f) {
-      for (var i = 1; i <= 6; i++) {
-        LOTES.push({
-          id: f + '-' + i,
-          finca: f,
-          nombre: f + '-' + i,
-          area: areaSeed[idCounter % areaSeed.length]
-        });
-        idCounter++;
+    function getVegetableStyle(vegName) {
+      var c = CICLOS[vegName];
+      if (c && c.color) {
+        return 'background:var(--' + c.color + '-bg);color:var(--' + c.color + '-fg);';
       }
-    });
-  }
-  initLotes();
-
-  var plantings = {};
-  plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}, {year: 2026, weekInYear: 20, vegetal: 'Broccoli'}];
-  plantings['CH-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}];
-  plantings['TM-1'] = [{year: 2026, weekInYear: 2, vegetal: 'China'}];
-  plantings['PV-1'] = [{year: 2027, weekInYear: 5, vegetal: 'China'}];
-
-  var dragSource = null;
-
-  function absWeek(year, weekInYear) {
-    return (year - 2020) * 52 + weekInYear;
-  }
-
-  function findActive(loteId, year, weekInYear){
-    var list = plantings[loteId] || [];
-    var currentAbs = absWeek(year, weekInYear);
-    for (var i = 0; i < list.length; i++){
-      var p = list[i];
-      var c = CICLOS[p.vegetal];
-      if (!c) continue;
-      var startAbs = absWeek(p.year, p.weekInYear);
-      if (currentAbs >= startAbs && currentAbs < startAbs + c.duracion) return p;
+      return 'background: #e0e0e0; color: #000;';
     }
-    return null;
-  }
 
-  function hasConflict(loteId, year, weekInYear, vegetal, ignore){
-    var c = CICLOS[vegetal];
-    if (!c) return false;
-    var list = (plantings[loteId]||[]).filter(function(p){ return p !== ignore; });
-    var startAbs = absWeek(year, weekInYear);
-    for (var i = 0; i < list.length; i++){
-      var p = list[i];
-      var pc = CICLOS[p.vegetal];
-      if (!pc) continue;
-      var pStartAbs = absWeek(p.year, p.weekInYear);
-      if (startAbs <= (pStartAbs + pc.duracion - 1) && pStartAbs <= (startAbs + c.duracion - 1)) return true;
-    }
-    return false;
-  }
+    var VEG_ORDER = Object.keys(CICLOS);
+    var FINCAS = ['NP','CH','TM','PV','SM'];
 
-  function isConsecutiveBroccoli(loteId, year, weekInYear, vegetal, ignore){
-    if (vegetal !== 'Broccoli') return false;
-    var list = (plantings[loteId] || []).filter(function(p){ return p !== ignore; });
-    var currentAbs = absWeek(year, weekInYear);
-    
-    var previousPlantings = list
-      .filter(function(p){ return absWeek(p.year, p.weekInYear) < currentAbs; })
-      .sort(function(a,b){ return absWeek(b.year, b.weekInYear) - absWeek(a.year, a.weekInYear); });
-      
-    if (previousPlantings.length > 0 && previousPlantings[0].vegetal === 'Broccoli') {
-      return true;
-    }
-    return false;
-  }
-
-  function harvestValue(planting, year, weekInYear, area){
-    var c = CICLOS[planting.vegetal];
-    if (!c) return 0;
-    var currentAbs = absWeek(year, weekInYear);
-    var startAbs = absWeek(planting.year, planting.weekInYear);
-    var rel = currentAbs - startAbs + 1;
-    var cosecha = c.cosechas.find(function(item){ return item[0] === rel; });
-    return cosecha ? area * c.rendimiento * cosecha[1] : 0;
-  }
-
-  function getTotalHarvestAllFincas(year, weekInYear, targetVeg) {
-    var sum = 0;
-    LOTES.forEach(function(l) {
-      var list = plantings[l.id] || [];
-      list.forEach(function(p) {
-        if (!targetVeg || p.vegetal === targetVeg) {
-          sum += harvestValue(p, year, weekInYear, l.area);
+    var LOTES = [];
+    function initLotes() {
+      LOTES = [];
+      var areaSeed = [1.0, 1.2, 0.8, 1.5, 1.1];
+      var idCounter = 1;
+      FINCAS.forEach(function(f) {
+        for (var i = 1; i <= 6; i++) {
+          LOTES.push({
+            id: f + '-' + i,
+            finca: f,
+            nombre: f + '-' + i,
+            area: areaSeed[idCounter % areaSeed.length]
+          });
+          idCounter++;
         }
       });
-    });
-    return sum;
-  }
+    }
+    initLotes();
 
-  var currentFinca = 'NP';
-  var selectedSummaryVeg = '';
-  var selectedLoteVeg = '';
-  var popupEl = null;
+    var plantings = {};
+    plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}, {year: 2026, weekInYear: 20, vegetal: 'Broccoli'}];
+    plantings['CH-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}];
+    plantings['TM-1'] = [{year: 2026, weekInYear: 2, vegetal: 'China'}];
+    plantings['PV-1'] = [{year: 2027, weekInYear: 5, vegetal: 'China'}];
 
-  function closePopup(){ if (popupEl){ popupEl.remove(); popupEl=null; } }
+    var dragSource = null;
 
-  function addPlantingWithValidation(loteId, year, weekInYear, veg, existingPlanting) {
-    if (hasConflict(loteId, year, weekInYear, veg, existingPlanting)){
-      alert('Existe conflicto con otro cultivo activo en esas semanas.');
+    function absWeek(year, weekInYear) {
+      return (year - 2020) * 52 + weekInYear;
+    }
+
+    function findActive(loteId, year, weekInYear){
+      var list = plantings[loteId] || [];
+      var currentAbs = absWeek(year, weekInYear);
+      for (var i = 0; i < list.length; i++){
+        var p = list[i];
+        var c = CICLOS[p.vegetal];
+        if (!c) continue;
+        var startAbs = absWeek(p.year, p.weekInYear);
+        if (currentAbs >= startAbs && currentAbs < startAbs + c.duracion) return p;
+      }
+      return null;
+    }
+
+    function hasConflict(loteId, year, weekInYear, vegetal, ignore){
+      var c = CICLOS[vegetal];
+      if (!c) return false;
+      var list = (plantings[loteId]||[]).filter(function(p){ return p !== ignore; });
+      var startAbs = absWeek(year, weekInYear);
+      for (var i = 0; i < list.length; i++){
+        var p = list[i];
+        var pc = CICLOS[p.vegetal];
+        if (!pc) continue;
+        var pStartAbs = absWeek(p.year, p.weekInYear);
+        if (startAbs <= (pStartAbs + pc.duracion - 1) && pStartAbs <= (startAbs + c.duracion - 1)) return true;
+      }
       return false;
     }
-    if (isConsecutiveBroccoli(loteId, year, weekInYear, veg, existingPlanting)){
-      alert('⚠️ ALERTA DE MONOCULTIVO:\nEstá sembrando BROCCOLI inmediatamente después de un cultivo previo de Broccoli en este lote.');
-    }
-    
-    if (existingPlanting) {
-      existingPlanting.vegetal = veg;
-    } else {
-      plantings[loteId] = plantings[loteId] || [];
-      plantings[loteId].push({year: year, weekInYear: weekInYear, vegetal: veg});
-    }
-    return true;
-  }
 
-  function openCellPopup(cellEl, loteId, year, weekInYear, activePlanting){
-    closePopup();
-    var p = document.createElement('div');
-    p.className = 'popup';
+    function harvestValue(planting, year, weekInYear, area){
+      var c = CICLOS[planting.vegetal];
+      if (!c) return 0;
+      var currentAbs = absWeek(year, weekInYear);
+      var startAbs = absWeek(planting.year, planting.weekInYear);
+      var rel = currentAbs - startAbs + 1;
+      var cosecha = c.cosechas.find(function(item){ return item[0] === rel; });
+      return cosecha ? area * c.rendimiento * cosecha[1] : 0;
+    }
 
-    if (!activePlanting) {
-      p.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Sembrar en ' + year + ' — Sem ' + weekInYear + '</div>' +
-        VEG_ORDER.map(function(v){ return '<button data-v="' + v + '">' + v + ' (' + CICLOS[v].duracion + ' sem)</button>'; }).join('');
-      
-      p.querySelectorAll('button').forEach(function(btn) {
-        btn.onclick = function() {
-          var veg = btn.dataset.v;
-          if (addPlantingWithValidation(loteId, year, weekInYear, veg, null)) {
-            closePopup(); render();
+    function getTotalHarvestAllFincas(year, weekInYear, targetVeg) {
+      var sum = 0;
+      LOTES.forEach(function(l) {
+        var list = plantings[l.id] || [];
+        list.forEach(function(p) {
+          if (!targetVeg || p.vegetal === targetVeg) {
+            sum += harvestValue(p, year, weekInYear, l.area);
           }
-        };
+        });
       });
-    } else {
-      var availableVegs = VEG_ORDER.filter(function(v){ return v !== activePlanting.vegetal; });
-      
-      p.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Actual: <b>' + activePlanting.vegetal + '</b> (' + activePlanting.year + ' - Sem ' + activePlanting.weekInYear + ')</div>' +
-        '<button id="btnDeleteVeg" class="danger">Eliminar Siembra</button>' +
-        '<div style="font-size:10.5px;color:var(--muted);margin:4px 0 2px;">Cambiar a otro vegetal:</div>' +
-        availableVegs.map(function(v){ return '<button data-v="' + v + '">Cambiar a ' + v + ' (' + CICLOS[v].duracion + ' sem)</button>'; }).join('');
-
-      p.querySelector('#btnDeleteVeg').onclick = function() {
-        plantings[loteId] = plantings[loteId].filter(function(x){ return x !== activePlanting; });
-        closePopup(); render();
-      };
-
-      p.querySelectorAll('button[data-v]').forEach(function(btn) {
-        btn.onclick = function() {
-          var newVeg = btn.dataset.v;
-          if (addPlantingWithValidation(loteId, activePlanting.year, activePlanting.weekInYear, newVeg, activePlanting)) {
-            closePopup(); render();
-          }
-        };
-      });
+      return sum;
     }
 
-    document.body.appendChild(p);
-    var r = cellEl.getBoundingClientRect();
-    p.style.left = (r.left + window.scrollX) + 'px';
-    p.style.top = (r.bottom + window.scrollY + 2) + 'px';
-    popupEl = p;
-  }
+    var currentFinca = 'NP';
+    var selectedSummaryVeg = '';
+    var selectedLoteVeg = '';
+    var popupEl = null;
 
-  function openSplitModal(){
-    var wrap = document.getElementById('modalWrap');
-    wrap.innerHTML = '<div class="modal-overlay"><div class="modal"><h3>Dividir Lote en Sub-lotes</h3><label>Seleccionar Lote a Dividir:</label><select id="splitLoteSelect">' +
-      LOTES.map(function(l){ return '<option value="' + l.id + '">' + l.nombre + ' (' + l.area + ' ha)</option>'; }).join('') +
-      '</select><div class="modal-actions"><button class="ghost" onclick="document.getElementById(\'modalWrap\').innerHTML=\'\'">Cancelar</button><button class="primary" id="confirmSplitBtn">Dividir Lote</button></div></div></div>';
+    function closePopup(){ if (popupEl){ popupEl.remove(); popupEl=null; } }
 
-    document.getElementById('confirmSplitBtn').onclick = function() {
-      var targetId = document.getElementById('splitLoteSelect').value;
-      var idx = LOTES.findIndex(function(l){ return l.id === targetId; });
-      if (idx !== -1) {
-        var original = LOTES[idx];
-        var halfArea = Number((original.area / 2).toFixed(2));
-        
-        var loteA = { id: original.id + 'A', finca: original.finca, nombre: original.nombre + 'A', area: halfArea };
-        var loteB = { id: original.id + 'B', finca: original.finca, nombre: original.nombre + 'B', area: halfArea };
+    function render(){
+      var summarySelect = document.getElementById('summaryVegFilter');
+      var loteSelect = document.getElementById('loteVegFilter');
+      selectedSummaryVeg = summarySelect ? summarySelect.value : '';
+      selectedLoteVeg = loteSelect ? loteSelect.value : '';
 
-        LOTES.splice(idx, 1, loteA, loteB);
-        
-        if (plantings[original.id]) {
-          plantings[loteA.id] = JSON.parse(JSON.stringify(plantings[original.id]));
-          delete plantings[original.id];
-        }
+      var tabsWrap = document.getElementById('fincaTabs');
+      tabsWrap.innerHTML = FINCAS.map(function(f){ 
+        return '<div class="tab ' + (currentFinca===f?'active':'') + '" onclick="window.setFinca(\'' + f + '\')">' + f + '</div>';
+      }).join('');
+
+      var activeLotes = LOTES.filter(function(l){ return l.finca === currentFinca; });
+      var wrap = document.getElementById('gridWrap');
+
+      var areaUsoTotal = 0;
+      var prodTotal = 0;
+
+      var sumColHeader = selectedSummaryVeg ? 'Total ' + selectedSummaryVeg + ' (Todas)' : 'Total Vegetales';
+
+      var tableHtml = '<table class="grid"><thead><tr><th class="corner">Semana</th><th class="sumhead">' + sumColHeader + '</th>';
+      
+      activeLotes.forEach(function(l) {
+        tableHtml += '<th class="lotehead">' + l.nombre + '<div class="sub">' + l.area + ' ha</div></th>';
+      });
+      tableHtml += '</tr></thead><tbody>';
+
+      if (selectedYears.length === 0) {
+        tableHtml += '<tr><td colspan="' + (activeLotes.length + 2) + '" style="padding:20px;color:var(--muted);">Seleccione al menos un año.</td></tr>';
+      } else {
+        selectedYears.forEach(function(year) {
+          tableHtml += '<tr class="year-divider"><td colspan="' + (activeLotes.length + 2) + '">Año ' + year + '</td></tr>';
+
+          for (var w = 1; w <= 52; w++) {
+            var globalHarvest = getTotalHarvestAllFincas(year, w, selectedSummaryVeg);
+            var globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
+
+            tableHtml += '<tr><td class="weekcell">' + w + '</td><td class="sumcell">' + globalHarvestTxt + '</td>';
+
+            activeLotes.forEach(function(l) {
+              var act = findActive(l.id, year, w);
+              var cellStyle = '';
+              var text = '';
+              var isStartCell = false;
+              var isHiddenByLoteFilter = false;
+
+              if (act) {
+                if (selectedLoteVeg && act.vegetal !== selectedLoteVeg) {
+                  isHiddenByLoteFilter = true;
+                } else {
+                  cellStyle = getVegetableStyle(act.vegetal);
+                  if (act.year === year && act.weekInYear === w) {
+                    text = act.vegetal;
+                    isStartCell = true;
+                  }
+                  
+                  var val = harvestValue(act, year, w, l.area);
+                  if (val > 0) {
+                    text = Math.round(val/100)/10 + 'k';
+                    prodTotal += val;
+                  }
+                  if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
+                }
+              }
+
+              tableHtml += '<td class="cell ' + (act && !isHiddenByLoteFilter ? 'planted' : '') + '" style="' + cellStyle + '" data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">' +
+                (isHiddenByLoteFilter ? '' : text) +
+              '</td>';
+            });
+
+            tableHtml += '</tr>';
+          }
+        });
       }
-      document.getElementById('modalWrap').innerHTML = '';
+
+      tableHtml += '</tbody></table>';
+      wrap.innerHTML = tableHtml;
+
+      document.getElementById('statArea').textContent = areaUsoTotal.toFixed(1);
+      document.getElementById('statProd').textContent = Math.round(prodTotal).toLocaleString('es-GT');
+    }
+
+    window.setFinca = function(f) {
+      currentFinca = f;
       render();
     };
-  }
 
-  function initYearSelectorUI() {
+    var optionsVegSummary = '<option value="">Todos los vegetales</option>' + 
+      VEG_ORDER.map(function(v){ return '<option value="' + v + '">' + v + '</option>'; }).join('');
+    
+    var optionsVegLote = '<option value="">Ver Todos</option>' + 
+      VEG_ORDER.map(function(v){ return '<option value="' + v + '">' + v + '</option>'; }).join('');
+
+    document.getElementById('summaryVegFilter').innerHTML = optionsVegSummary;
+    document.getElementById('loteVegFilter').innerHTML = optionsVegLote;
+
+    document.getElementById('summaryVegFilter').onchange = render;
+    document.getElementById('loteVegFilter').onchange = render;
+
     var container = document.getElementById('yearCheckboxes');
     container.innerHTML = AVAILABLE_YEARS.map(function(yr) {
       var isChecked = selectedYears.indexOf(yr) !== -1 ? 'checked' : '';
@@ -384,214 +374,20 @@ try {
         render();
       };
     });
-  }
 
-  function render(){
-    var summarySelect = document.getElementById('summaryVegFilter');
-    var loteSelect = document.getElementById('loteVegFilter');
-    selectedSummaryVeg = summarySelect ? summarySelect.value : '';
-    selectedLoteVeg = loteSelect ? loteSelect.value : '';
-
-    var tabsWrap = document.getElementById('fincaTabs');
-    tabsWrap.innerHTML = FINCAS.map(function(f){ 
-      return '<div class="tab ' + (currentFinca===f?'active':'') + '" onclick="currentFinca=\'' + f + '\';render();">' + f + '</div>';
-    }).join('');
-
-    var activeLotes = LOTES.filter(function(l){ return l.finca === currentFinca; });
-    var wrap = document.getElementById('gridWrap');
-
-    var areaUsoTotal = 0;
-    var prodTotal = 0;
-
-    var sumColHeader = selectedSummaryVeg ? 'Total ' + selectedSummaryVeg + ' (Todas Fincas)' : 'Total Todos Vegetales';
-
-    var tableHtml = '<table class="grid"><thead><tr><th class="corner">Semana</th><th class="sumhead">' + sumColHeader + '</th>';
-    
-    activeLotes.forEach(function(l) {
-      tableHtml += '<th class="lotehead">' + l.nombre + '<div class="sub">' + l.area + ' ha</div></th>';
-    });
-    tableHtml += '</tr></thead><tbody>';
-
-    if (selectedYears.length === 0) {
-      tableHtml += '<tr><td colspan="' + (activeLotes.length + 2) + '" style="padding:20px;color:var(--muted);">Seleccione al menos un año en el filtro.</td></tr>';
-    } else {
-      selectedYears.forEach(function(year) {
-        tableHtml += '<tr class="year-divider"><td colspan="' + (activeLotes.length + 2) + '">Año ' + year + '</td></tr>';
-
-        for (var w = 1; w <= 52; w++) {
-          var globalHarvest = getTotalHarvestAllFincas(year, w, selectedSummaryVeg);
-          var globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
-
-          tableHtml += '<tr><td class="weekcell">' + w + '</td><td class="sumcell">' + globalHarvestTxt + '</td>';
-
-          activeLotes.forEach(function(l) {
-            var act = findActive(l.id, year, w);
-            var cellStyle = '';
-            var text = '';
-            var isStartCell = false;
-            var isHiddenByLoteFilter = false;
-
-            if (act) {
-              if (selectedLoteVeg && act.vegetal !== selectedLoteVeg) {
-                isHiddenByLoteFilter = true;
-              } else {
-                cellStyle = getVegetableStyle(act.vegetal);
-                if (act.year === year && act.weekInYear === w) {
-                  text = act.vegetal;
-                  isStartCell = true;
-                }
-                
-                var val = harvestValue(act, year, w, l.area);
-                if (val > 0) {
-                  text = Math.round(val/100)/10 + 'k';
-                  prodTotal += val;
-                }
-                if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
-              }
-            }
-
-            var draggableAttr = (isStartCell && !isHiddenByLoteFilter) ? 'draggable="true"' : '';
-            var draggableClass = (isStartCell && !isHiddenByLoteFilter) ? 'draggable' : '';
-
-            tableHtml += '<td class="cell ' + (act && !isHiddenByLoteFilter ? 'planted' : '') + ' ' + draggableClass + '" ' + draggableAttr + ' style="' + cellStyle + '" data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">' +
-              (isHiddenByLoteFilter ? '' : text) +
-            '</td>';
-          });
-
-          tableHtml += '</tr>';
-        }
-      });
-    }
-
-    tableHtml += '</tbody></table>';
-    wrap.innerHTML = tableHtml;
-
-    document.getElementById('statArea').textContent = areaUsoTotal.toFixed(1);
-    document.getElementById('statProd').textContent = Math.round(prodTotal).toLocaleString('es-GT');
-
-    wrap.querySelectorAll('td.cell').forEach(function(td) {
-      var loteId = td.dataset.lote;
-      var year = parseInt(td.dataset.year);
-      var week = parseInt(td.dataset.week);
-
-      td.onclick = function(e) {
-        e.stopPropagation();
-        var act = findActive(loteId, year, week);
-        openCellPopup(td, loteId, year, week, act);
-      };
-
-      td.ondragstart = function(e) {
-        var act = findActive(loteId, year, week);
-        if (act && act.year === year && act.weekInYear === week) {
-          dragSource = { loteId: loteId, planting: act };
-          e.dataTransfer.setData('text/plain', '');
-        }
-      };
-
-      td.ondragover = function(e) {
-        e.preventDefault();
-        if (dragSource && dragSource.loteId === loteId) {
-          td.classList.add('dragover');
-        }
-      };
-
-      td.ondragleave = function() {
-        td.classList.remove('dragover');
-      };
-
-      td.ondrop = function(e) {
-        e.preventDefault();
-        td.classList.remove('dragover');
-        if (!dragSource) return;
-
-        var srcLote = dragSource.loteId;
-        var planting = dragSource.planting;
-        if (srcLote !== loteId) {
-          dragSource = null;
-          return;
-        }
-
-        if (hasConflict(loteId, year, week, planting.vegetal, planting)) {
-          td.classList.add('conflict');
-          setTimeout(function(){ td.classList.remove('conflict'); }, 800);
-          dragSource = null;
-          return;
-        }
-
-        if (isConsecutiveBroccoli(loteId, year, week, planting.vegetal, planting)) {
-          alert('⚠️ ALERTA DE MONOCULTIVO:\nMoviendo BROCCOLI inmediatamente después de otro cultivo de Broccoli en este lote.');
-        }
-
-        planting.year = year;
-        planting.weekInYear = week;
-        dragSource = null;
-        render();
-      };
-    });
-  }
-
-  function startApp() {
-    var optionsVegSummary = '<option value="">Todos los vegetales</option>' + 
-      VEG_ORDER.map(function(v){ return '<option value="' + v + '">' + v + '</option>'; }).join('');
-    
-    var optionsVegLote = '<option value="">Ver Todos</option>' + 
-      VEG_ORDER.map(function(v){ return '<option value="' + v + '">' + v + '</option>'; }).join('');
-
-    document.getElementById('summaryVegFilter').innerHTML = optionsVegSummary;
-    document.getElementById('loteVegFilter').innerHTML = optionsVegLote;
-
-    document.getElementById('summaryVegFilter').onchange = render;
-    document.getElementById('loteVegFilter').onchange = render;
-    document.getElementById('splitBtn').onclick = openSplitModal;
-
-    document.getElementById('exportBtn').onclick = function() {
-      if (typeof XLSX === 'undefined') {
-        alert('La librería de Excel aún se está cargando. Intente de nuevo en unos segundos.');
-        return;
-      }
-      var rows = [['Finca','Lote','Año','Semana del Año','Vegetal','Produccion']];
-      LOTES.forEach(function(l) {
-        (plantings[l.id]||[]).forEach(function(p) {
-          var c = CICLOS[p.vegetal];
-          if (!c) return;
-          for(var rel=0; rel<c.duracion; rel++){
-            var abs = absWeek(p.year, p.weekInYear) + rel;
-            var yr = 2020 + Math.floor(abs / 52);
-            var wk = (abs % 52);
-            if (wk === 0) { wk = 52; yr -= 1; }
-            
-            var val = harvestValue(p, yr, wk, l.area);
-            if(val > 0){
-              rows.push([l.finca, l.nombre, yr, wk, p.vegetal, Math.round(val)]);
-            }
-          }
-        });
-      });
-      var ws = XLSX.utils.aoa_to_sheet(rows);
-      var wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Planificacion");
-      XLSX.writeFile(wb, "Planificacion_Siembras.xlsx");
-    };
-
-    document.addEventListener('click', function(e) {
-      if (popupEl && !popupEl.contains(e.target)) closePopup();
-    });
-
-    initYearSelectorUI();
     render();
+  } catch (err) {
+    document.getElementById('gridWrap').innerHTML = '<div style="color:red; padding:20px;"><b>Error al inicializar interfaz:</b><br>' + err.message + '</div>';
   }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startApp);
-  } else {
-    startApp();
-  }
-} catch (err) {
-  document.body.innerHTML = '<div style="color:red; padding:20px;"><b>Error al cargar la aplicación:</b><br>' + err.message + '</div>';
-}
+};
 </script>
 </body>
 </html>
 """
 
-components.html(html_code, height=900, scrolling=True)
+# Renderizado con la API estándar de Streamlit para evitar bloqueos
+try:
+    st.html(html_code)
+except AttributeError:
+    import streamlit.components.v1 as components
+    components.html(html_code, height=1000, scrolling=True)
