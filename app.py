@@ -1,14 +1,16 @@
 import pandas as pd
 import streamlit as st
 
-# Configuración de la página
+# ==========================================
+# CONFIGURACIÓN INICIAL (ESTILO V11.0)
+# ==========================================
 st.set_page_config(
-    page_title="Siesa Plan - Planificador Agrícola",
+    page_title="Siesa Plan - Sistema de Control Agrícola (V12.0)",
     page_icon="🌱",
     layout="wide"
 )
 
-st.title("🌱 Siesa Plan: Planificador y Simulador de Siembra")
+st.title("🌱 Siesa Plan V12.0 - Planificador de Siembra y Producción")
 st.markdown("---")
 
 # ==========================================
@@ -17,13 +19,11 @@ st.markdown("---")
 @st.cache_data
 def cargar_datos_excel():
     try:
-        # Cargar matriz de rendimientos del archivo Siesa Plan.xlsx
         df_rend = pd.read_excel("Siesa Plan.xlsx", sheet_name="Rendimientos")
         if "Semana" not in df_rend.columns and len(df_rend.columns) >= 6:
             df_rend.columns = ["Semana", "Ejote", "Brocoli", "China", "Dulce", "Grano"]
         return df_rend
-    except Exception as e:
-        # Fallback si no encuentra el archivo exacto
+    except Exception:
         semanas = list(range(1, 54))
         return pd.DataFrame({
             "Semana": semanas,
@@ -37,9 +37,9 @@ def cargar_datos_excel():
 df_rendimientos = cargar_datos_excel()
 
 # ==========================================
-# 2. DEFINICIÓN DE FINCAS Y LOTES OFICIALES
+# 2. INICIALIZACIÓN DE LOTES OFICIALES (V12.0)
+# NP: 1-40, SM: 1-30, PV: 1-30, TM: 1-30, CH: 1-30
 # ==========================================
-# NP (1-40), SM (1-30), PV (1-30), TM (1-30), CH (1-30)
 if "df_lotes_maestros" not in st.session_state:
     lotes_data = []
     config_fincas = [
@@ -56,18 +56,13 @@ if "df_lotes_maestros" not in st.session_state:
                 "Finca": finca,
                 "Lote": f"Lote {i}",
                 "Área (mz)": area_def,
-                "Vegetal": "Ejote",          # Vegetal por defecto
-                "Semana Cosecha": 48         # Semana por defecto
+                "Vegetal": "Ejote",
+                "Semana Cosecha": 48
             })
             
     st.session_state.df_lotes_maestros = pd.DataFrame(lotes_data)
 
-# ==========================================
-# 3. PANEL LATERAL (PARÁMETROS CLAVE)
-# ==========================================
-st.sidebar.header("⚙️ Parámetros de Ciclo y Clima")
-
-# Ciclos base por vegetal
+# Ciclos base por vegetal (amarrados al rendimiento y planificación)
 ciclos_base = {
     "Ejote": 10,
     "Brocoli": 12,
@@ -76,22 +71,26 @@ ciclos_base = {
     "Grano": 14
 }
 
-st.sidebar.subheader("❄️ Época Fría (Ajuste Ejote)")
-frio_activo = st.sidebar.checkbox("Activar ajuste de Época Fría (+1 sem. Ejote)", value=True)
+# ==========================================
+# 3. PANEL LATERAL (PARÁMETROS CLÁSICOS V11)
+# ==========================================
+st.sidebar.header("⚙️ Parámetros de Control")
+
+frio_activo = st.sidebar.checkbox("Activar Época Fría (+1 sem. Ejote)", value=True)
 semana_inicio_frio = st.sidebar.number_input("Semana Inicio Frío", 1, 53, 48)
 semana_fin_frio = st.sidebar.number_input("Semana Fin Frío", 1, 53, 6)
 
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **Instrucciones:** Modifica directamente en la tabla principal el **Vegetal** y la **Semana de Cosecha** para cada lote de tus fincas (NP, SM, PV, TM, CH). Todo se calculará automáticamente en tiempo real.")
+st.sidebar.info("💡 **Instrucciones V12.0:** Modifica directamente en la tabla principal el **Vegetal** y la **Semana de Cosecha** para tus lotes oficiales. El ciclo, la siembra y el rendimiento se calculan automáticamente de forma integrada.")
 
 # ==========================================
-# 4. VISTA PRINCIPAL: PLANIFICADOR MAESTRO
+# 4. VISTA PRINCIPAL: PLANIFICADOR INTEGRADO
 # ==========================================
-st.subheader("📋 Matriz General de Fincas, Lotes y Planificación")
+st.subheader("📋 Matriz de Planificación por Finca y Lote")
 
 # Filtro rápido por Finca
 fincas_disponibles = ["Todas las Fincas", "NP", "SM", "PV", "TM", "CH"]
-finca_seleccionada = st.selectbox("🔍 Filtrar vista por Finca:", options=fincas_disponibles)
+finca_seleccionada = st.selectbox("🔍 Filtrar Finca:", options=fincas_disponibles)
 
 df_actual = st.session_state.df_lotes_maestros
 if finca_seleccionada != "Todas las Fincas":
@@ -99,16 +98,14 @@ if finca_seleccionada != "Todas las Fincas":
 else:
     df_filtrado = df_actual
 
-# Tabla editable donde el usuario ve sus fincas y lotes juntos
-st.markdown("### Asignación de Cultivos y Cosechas por Lote")
+# Tabla interactiva heredada de la versión clásica
 vegetales_disponibles = list(ciclos_base.keys())
 
-# Renderizamos un editor de tabla limpio y directo
 df_editado = st.data_editor(
     df_filtrado,
     num_rows="fixed",
     use_container_width=True,
-    key="editor_planificador_principal",
+    key="editor_v12",
     column_config={
         "Finca": st.column_config.TextColumn("Finca", disabled=True),
         "Lote": st.column_config.TextColumn("Lote", disabled=True),
@@ -118,17 +115,19 @@ df_editado = st.data_editor(
     }
 )
 
-# Sincronizar cambios de vuelta al estado general si se filtró
+# Sincronización de cambios en el estado general
 if finca_seleccionada != "Todas las Fincas":
-    st.session_state.df_lotes_maestros.update(df_editado)
+    # Actualizar las filas correspondientes en el dataframe maestro
+    indices_afectados = df_editado.index
+    st.session_state.df_lotes_maestros.loc[indices_afectados] = df_editado
 else:
     st.session_state.df_lotes_maestros = df_editado
 
 # ==========================================
-# 5. CÁLCULOS AUTOMÁTICOS Y RESULTADOS
+# 5. CÁLCULOS Y RESULTADOS CON RENDIMIENTO AMARRADO AL CICLO
 # ==========================================
 st.markdown("---")
-st.subheader("📊 Resultados y Proyección de Siembra y Cosecha")
+st.subheader("📊 Resultados de Siembra, Ciclo y Producción")
 
 resultados = []
 for _, row in st.session_state.df_lotes_maestros.iterrows():
@@ -138,10 +137,10 @@ for _, row in st.session_state.df_lotes_maestros.iterrows():
     vegetal = row["Vegetal"]
     sem_cosecha = int(row["Semana Cosecha"])
     
-    # Obtener ciclo base
+    # Ciclo base del vegetal seleccionado
     ciclo_base = ciclos_base.get(vegetal, 10)
     
-    # Lógica de época fría (aplica solo si el vegetal es Ejote y está activado)
+    # Lógica de época fría (aplica para Ejote)
     es_frio = False
     if frio_activo and vegetal == "Ejote":
         if semana_inicio_frio > semana_fin_frio:
@@ -151,12 +150,12 @@ for _, row in st.session_state.df_lotes_maestros.iterrows():
             
     ciclo_efectivo = ciclo_base + 1 if es_frio else ciclo_base
     
-    # Calcular semana de siembra
+    # Cálculo de la semana de siembra amarrada al ciclo efectivo
     sem_siembra = sem_cosecha - ciclo_efectivo
     if sem_siembra <= 0:
         sem_siembra += 53
         
-    # Buscar rendimiento en la matriz del Excel
+    # Obtener rendimiento unitario del Excel amarrado a la semana de cosecha
     rendimiento_unitario = 0.0
     if vegetal in df_rendimientos.columns:
         match_r = df_rendimientos.loc[df_rendimientos.iloc[:, 0] == sem_cosecha, vegetal]
@@ -178,9 +177,9 @@ for _, row in st.session_state.df_lotes_maestros.iterrows():
         "Época Fría": "Sí (+1 sem)" if es_frio else "No"
     })
 
-df_resultados = st.session_state.df_resultados_finales = pd.DataFrame(resultados)
+df_resultados = pd.DataFrame(resultados)
 
-# Mostrar tabla de resultados con formato limpio
+# Mostrar tabla de resultados formateada
 st.dataframe(
     df_resultados.style.format({
         "Área (mz)": "{:.2f}",
@@ -190,7 +189,7 @@ st.dataframe(
     use_container_width=True
 )
 
-# Resumen general consolidado
+# Métricas consolidadas finales
 total_mz = df_resultados["Área (mz)"].sum()
 total_libras = df_resultados["Producción Total (lbs)"].sum()
 
