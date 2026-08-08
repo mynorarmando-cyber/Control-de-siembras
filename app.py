@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.0",
+    page_title="Planificación de Siembras — V10.1",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -80,22 +80,22 @@ html_code = """
 
   .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); min-height: 500px; }
   table.grid { border-collapse:collapse; table-layout:fixed; width: max-content; }
-  table.grid th, table.grid td { border:1px solid #e0ddd3; text-align:center; padding:0; }
+  table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; padding:0; }
   
-  th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:50px; min-width:50px; height:70px; font-size:10px; }
+  th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:50px; min-width:50px; height:45px; font-size:10px; }
   th.sumhead { position:sticky; top:0; left:50px; z-index:10; background:#cbe0d7; color:var(--forest); width:95px; min-width:95px; font-size:10px; font-weight:700; border-right:2px solid var(--forest); }
   
-  /* Encabezados verticales para columnas muy angostas */
-  th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:28px; min-width:28px; height:70px; vertical-align:bottom; padding-bottom:4px; }
-  .lote-title-vert { writing-mode: vertical-rl; transform: rotate(180deg); font-weight:700; font-size:9.5px; white-space:nowrap; margin:0 auto; display:block; }
-  .lote-sub-vert { font-weight:normal; color:var(--muted); font-size:8.5px; }
-
+  /* Ancho ajustado a 45px por columna */
+  th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:45px; min-width:45px; max-width:45px;
+    font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; }
+  th.lotehead .sub { font-size:8.5px; font-weight:normal; color:var(--muted); }
+  
   tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:11px; text-align:left; padding:3px 8px; position:sticky; left:0; z-index:9; }
 
   td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:50px; min-width:50px; font-weight:600; font-size:10px; height:24px; }
   td.sumcell { position:sticky; left:50px; z-index:7; background:#e4f0ec; width:95px; min-width:95px; font-weight:700; font-size:10px; height:24px; border-right:2px solid var(--forest); color:var(--forest); }
   
-  td.cell { width:28px; min-width:28px; max-width:28px; height:24px; cursor:pointer; font-size:8.5px; position:relative; user-select:none; overflow:hidden; }
+  td.cell { width:45px; min-width:45px; max-width:45px; height:24px; cursor:pointer; font-size:8.5px; position:relative; user-select:none; overflow:hidden; }
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; z-index:5; }
   td.cell.planted { font-weight:700; cursor:grab; }
   td.cell.dragover { outline:2px dashed var(--forest); outline-offset:-2px; background:#e2f0d9 !important; }
@@ -113,7 +113,7 @@ html_code = """
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Vista Compacta (30 Lotes)</h1>
+    <h1>Planificación de Siembras — Columnas Angostas (45px)</h1>
   </header>
 
   <div class="toolbar">
@@ -187,7 +187,6 @@ html_code = """
       var VEG_ORDER = Object.keys(CICLOS);
       var FINCAS = ['NP','CH','TM','PV','SM'];
 
-      // Generar 30 lotes por finca
       var LOTES = [];
       var areaSeed = [1.0, 1.2, 0.8, 1.5, 1.1, 0.9, 1.3, 1.4];
       var idCounter = 1;
@@ -290,7 +289,7 @@ html_code = """
         var tableHtml = '<table class="grid"><thead><tr><th class="corner">Sem.</th><th class="sumhead">' + sumColHeader + '</th>';
         
         activeLotes.forEach(function(l) {
-          tableHtml += '<th class="lotehead" title="' + l.nombre + ' (' + l.area + ' ha)"><span class="lote-title-vert">' + l.nombre + ' <span class="lote-sub-vert">(' + l.area + 'ha)</span></span></th>';
+          tableHtml += '<th class="lotehead">' + l.nombre + '<div class="sub">' + l.area + 'ha</div></th>';
         });
         tableHtml += '</tr></thead><tbody>';
 
@@ -310,7 +309,6 @@ html_code = """
                 var act = findActive(l.id, year, w);
                 var cellStyle = '';
                 var text = '';
-                var tooltip = '';
                 var isHiddenByLoteFilter = false;
 
                 if (act) {
@@ -318,13 +316,13 @@ html_code = """
                     isHiddenByLoteFilter = true;
                   } else {
                     cellStyle = getVegetableStyle(act.vegetal);
-                    tooltip = act.vegetal + ' (' + l.nombre + ')';
+                    if (act.year === year && act.weekInYear === w) {
+                      text = act.vegetal;
+                    }
                     
                     var val = harvestValue(act, year, w, l.area);
                     if (val > 0) {
-                      var roundedVal = Math.round(val);
-                      text = roundedVal; // Valor sin 'k'
-                      tooltip += ' - Cosecha: ' + roundedVal.toLocaleString('es-GT') + ' kg/lbs';
+                      text = Math.round(val); // Número entero directo (ej. 3500)
                       prodTotal += val;
                     }
                     if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
@@ -332,7 +330,6 @@ html_code = """
                 }
 
                 tableHtml += '<td class="cell ' + (act && !isHiddenByLoteFilter ? 'planted' : '') + '" style="' + cellStyle + '" ' +
-                  'title="' + tooltip + '" ' +
                   'draggable="' + (act ? 'true' : 'false') + '" ' +
                   'data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">' +
                   (isHiddenByLoteFilter ? '' : '<span class="cell-val">' + text + '</span>') +
