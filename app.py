@@ -74,13 +74,7 @@ html_code = """
   .stat b { font-size:13px; color: var(--forest); display:block; }
   .stat span { font-size:10px; color:var(--muted); text-transform:uppercase; }
 
-  button.primary { background: var(--forest); color:#fff; border:none; border-radius:6px;
-    padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; }
-  button.primary:hover { background: var(--forest-dim); }
-  button.ghost { background:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 10px;
-    font-size:12px; cursor:pointer; }
-
-  .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); min-height:600px; }
+  .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); min-height: 600px; }
   table.grid { border-collapse:collapse; table-layout:fixed; width: 100%; }
   table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; }
   
@@ -97,15 +91,17 @@ html_code = """
   td.sumcell { position:sticky; left:70px; z-index:7; background:#e4f0ec; width:130px; min-width:130px;
     font-weight:700; font-size:11px; height:26px; border-right:2px solid var(--forest); color:var(--forest); }
   
-  td.cell { width:80px; height:26px; cursor:pointer; font-size:10px; position:relative; }
+  td.cell { width:80px; height:26px; cursor:pointer; font-size:10px; position:relative; user-select:none; }
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; }
-  td.cell.planted { font-weight:700; }
+  td.cell.planted { font-weight:700; cursor:grab; }
+  td.cell.dragover { outline:2px dashed var(--forest); outline-offset:-2px; background:#e2f0d9 !important; }
 
   .popup { position:absolute; z-index:50; background:#fff; border:1px solid var(--line); border-radius:8px;
-    box-shadow:0 8px 24px rgba(0,0,0,.18); padding:8px; min-width:180px; }
+    box-shadow:0 8px 24px rgba(0,0,0,.18); padding:8px; min-width:160px; }
   .popup button { display:block; width:100%; text-align:left; padding:6px 8px; border:none; background:none;
     cursor:pointer; border-radius:5px; font-size:12px; margin-bottom:2px; }
   .popup button:hover { background:#f0efe8; }
+  .popup .danger { color: var(--alert); font-weight:600; border-bottom:1px solid var(--line); margin-bottom:6px; padding-bottom:6px; }
 </style>
 </head>
 <body>
@@ -179,6 +175,13 @@ html_code = """
       plantings['TM-1'] = [{year: 2026, weekInYear: 2, vegetal: 'China'}];
       plantings['PV-1'] = [{year: 2027, weekInYear: 5, vegetal: 'China'}];
 
+      var dragSource = null;
+      var activePopup = null;
+
+      function closePopup() {
+        if (activePopup) { activePopup.remove(); activePopup = null; }
+      }
+
       function absWeek(year, weekInYear) {
         return (year - 2020) * 52 + weekInYear;
       }
@@ -224,6 +227,7 @@ html_code = """
       var selectedLoteVeg = '';
 
       function render(){
+        closePopup();
         var summarySelect = document.getElementById('summaryVegFilter');
         var loteSelect = document.getElementById('loteVegFilter');
         selectedSummaryVeg = summarySelect ? summarySelect.value : '';
@@ -292,7 +296,9 @@ html_code = """
                   }
                 }
 
-                tableHtml += '<td class="cell ' + (act && !isHiddenByLoteFilter ? 'planted' : '') + '" style="' + cellStyle + '">' +
+                tableHtml += '<td class="cell ' + (act && !isHiddenByLoteFilter ? 'planted' : '') + '" style="' + cellStyle + '" ' +
+                  'draggable="' + (act ? 'true' : 'false') + '" ' +
+                  'data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">' +
                   (isHiddenByLoteFilter ? '' : text) +
                 '</td>';
               });
@@ -307,7 +313,100 @@ html_code = """
 
         document.getElementById('statArea').textContent = areaUsoTotal.toFixed(1);
         document.getElementById('statProd').textContent = Math.round(prodTotal).toLocaleString('es-GT');
+
+        bindGridEvents();
       }
+
+      function bindGridEvents() {
+        var cells = document.querySelectorAll('td.cell');
+
+        cells.forEach(function(cell) {
+          cell.onclick = function(e) {
+            e.stopPropagation();
+            closePopup();
+
+            var loteId = cell.dataset.lote;
+            var yr = parseInt(cell.dataset.year);
+            var wk = parseInt(cell.dataset.week);
+            var act = findActive(loteId, yr, wk);
+
+            var pop = document.createElement('div');
+            pop.className = 'popup';
+            pop.style.left = (e.pageX - document.getElementById('gridWrap').scrollLeft) + 'px';
+            pop.style.top = (e.pageY - document.getElementById('gridWrap').scrollTop) + 'px';
+
+            if (act) {
+              var btnDel = document.createElement('button');
+              btnDel.className = 'danger';
+              btnDel.textContent = 'Eliminar ' + act.vegetal;
+              btnDel.onclick = function() {
+                plantings[loteId] = (plantings[loteId] || []).filter(function(p){ return p !== act; });
+                render();
+              };
+              pop.appendChild(btnDel);
+            }
+
+            VEG_ORDER.forEach(function(v) {
+              var btn = document.createElement('button');
+              btn.textContent = (act ? 'Cambiar a ' : 'Sembrar ') + v;
+              btn.onclick = function() {
+                if (act) {
+                  act.vegetal = v;
+                } else {
+                  if (!plantings[loteId]) plantings[loteId] = [];
+                  plantings[loteId].push({ year: yr, weekInYear: wk, vegetal: v });
+                }
+                render();
+              };
+              pop.appendChild(btn);
+            });
+
+            document.getElementById('gridWrap').appendChild(pop);
+            activePopup = pop;
+          };
+
+          cell.ondragstart = function(e) {
+            var loteId = cell.dataset.lote;
+            var yr = parseInt(cell.dataset.year);
+            var wk = parseInt(cell.dataset.week);
+            var act = findActive(loteId, yr, wk);
+            if (act) {
+              dragSource = { loteId: loteId, planting: act };
+              e.dataTransfer.setData('text/plain', '');
+            } else {
+              e.preventDefault();
+            }
+          };
+
+          cell.ondragover = function(e) {
+            e.preventDefault();
+            cell.classList.add('dragover');
+          };
+
+          cell.ondragleave = function() {
+            cell.classList.remove('dragover');
+          };
+
+          cell.ondrop = function(e) {
+            e.preventDefault();
+            cell.classList.remove('dragover');
+            if (!dragSource) return;
+
+            var targetYr = parseInt(cell.dataset.year);
+            var targetWk = parseInt(cell.dataset.week);
+
+            dragSource.planting.year = targetYr;
+            dragSource.planting.weekInYear = targetWk;
+
+            dragSource = null;
+            render();
+          };
+        });
+      }
+
+      document.getElementById('gridWrap').onclick = function() {
+        closePopup();
+      };
 
       var optionsVegSummary = '<option value="">Todos los vegetales</option>' + 
         VEG_ORDER.map(function(v){ return '<option value="' + v + '">' + v + '</option>'; }).join('');
