@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.11",
+    page_title="Planificación de Siembras — V10.12",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -39,7 +39,7 @@ html_code = """
     --forest: #1f4e3d;
     --muted: #6b7268;
     --alert: #b3261e;
-    --gap-bg: #fdf2f2;
+    --gap-bg: #fbeae8;
     --split-head: #d9edf7;
     --split-head-fg: #1d394a;
     --ejote-bg: #ddebf7; --ejote-fg: #1f4e79;
@@ -107,7 +107,7 @@ html_code = """
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; z-index:5; }
   td.cell.planted { font-weight:700; cursor:grab; }
   td.cell.inherited-occupancy { background-color: var(--inherited-bg); color: var(--inherited-fg); font-style: italic; border: 1px dashed var(--inherited-border); }
-  td.cell.long-gap { background-color: var(--gap-bg); }
+  td.cell.long-gap { background-color: var(--gap-bg); color: var(--alert); font-weight: 600; }
   td.cell.dragover { outline:2px dashed var(--forest); outline-offset:-2px; background:#e2f0d9 !important; }
   td.cell.drag-error { outline:2px dashed var(--alert) !important; background:#fbeae8 !important; cursor:not-allowed !important; }
 
@@ -121,7 +121,7 @@ html_code = """
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.22); 
     padding: 6px; 
-    width: 180px;
+    width: 190px;
     animation: fadeIn 0.1s ease-out;
   }
   @keyframes fadeIn {
@@ -133,14 +133,14 @@ html_code = """
   .popup button:hover:not(:disabled) { background:#e8f0ec; color: var(--forest); }
   .popup button:disabled { opacity: 0.4; cursor: not-allowed; }
   .popup .danger { color: var(--alert); font-weight:700; border-bottom:1px solid var(--line); margin-bottom:4px; padding-bottom:4px; }
-  .popup .action-btn { color: var(--forest); font-weight:700; border-top:1px solid var(--line); margin-top:4px; padding-top:4px; }
   .popup .msg-occupied { font-size: 10px; color: var(--alert); padding: 4px 6px; font-weight: 600; text-align: center; background: #fbeae8; border-radius: 4px; margin-bottom: 4px; }
+  .popup .msg-warning { font-size: 9.5px; color: #856404; background: #fff3cd; border: 1px solid #ffeeba; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; text-align: center; font-weight: 500; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Alertas Cruzadas A/B (V10.11)</h1>
+    <h1>Planificación de Siembras — V10.12 (NP 40 lotes, Brechas > 5 sem, Alerta Brócoli)</h1>
   </header>
 
   <div class="toolbar">
@@ -218,7 +218,8 @@ html_code = """
       var areaSeed = [1.0, 1.2, 0.8, 1.5, 1.1, 0.9, 1.3, 1.4];
       var idCounter = 1;
       FINCAS.forEach(function(f) {
-        for (var i = 1; i <= 30; i++) {
+        var count = (f === 'NP') ? 40 : 30;
+        for (var i = 1; i <= count; i++) {
           BASE_LOTES.push({
             id: f + '-' + i,
             finca: f,
@@ -285,17 +286,12 @@ html_code = """
         return null;
       }
 
-      // Ocupación detallada bidireccional y jerárquica:
-      // - Si es A o B: Muestra su siembra directa, O si el Lote Principal completo tiene siembra activa en esa semana (bloqueando A y B).
-      // - Si es el Lote Principal: Muestra su siembra directa, O si A o B tienen actividad.
       function getDetailedOccupancy(loteId, year, weekInYear) {
-        // 1. Revisión directa en el propio ID
         var direct = findActive(loteId, year, weekInYear);
         if (direct) {
           return { planting: direct, type: 'direct', sourceId: loteId };
         }
 
-        // 2. Si es Lote Principal, verificar si A o B están activos
         if (!loteId.endsWith('A') && !loteId.endsWith('B')) {
           var subA = findActive(loteId + 'A', year, weekInYear);
           if (subA) return { planting: subA, type: 'inherited', sourceId: loteId + 'A' };
@@ -303,7 +299,6 @@ html_code = """
           if (subB) return { planting: subB, type: 'inherited', sourceId: loteId + 'B' };
         }
 
-        // 3. Si es un sub-lote (A o B), verificar si el Lote Principal completo está ocupado
         if (loteId.endsWith('A') || loteId.endsWith('B')) {
           var baseId = loteId.slice(0, -1);
           var parentAct = findActive(baseId, year, weekInYear);
@@ -311,6 +306,87 @@ html_code = """
         }
 
         return null;
+      }
+
+      // Evaluar si una semana vacía tiene más de 5 semanas de inactividad respecto a la siembra anterior en el mismo espacio
+      function isLongGap(loteId, year, weekInYear) {
+        var currentAbs = absWeek(year, weekInYear);
+        var checkIds = [loteId];
+        if (!loteId.endsWith('A') && !loteId.endsWith('B')) {
+          checkIds.push(loteId + 'A', loteId + 'B');
+        } else if (loteId.endsWith('A') || loteId.endsWith('B')) {
+          checkIds.push(loteId.slice(0, -1));
+        }
+
+        var allPlantings = [];
+        checkIds.forEach(function(cid) {
+          if (plantings[cid]) {
+            allPlantings = allPlantings.concat(plantings[cid]);
+          }
+        });
+
+        if (allPlantings.length === 0) return false;
+
+        // Ordenar por tiempo absoluto
+        allPlantings.sort(function(a, b) {
+          return absWeek(a.year, a.weekInYear) - absWeek(b.year, b.weekInYear);
+        });
+
+        // Buscar si esta semana está entre el final de una siembra y el inicio de la siguiente
+        for (var i = 0; i < allPlantings.length - 1; i++) {
+          var p1 = allPlantings[i];
+          var end1 = absWeek(p1.year, p1.weekInYear) + CICLOS[p1.vegetal].duracion - 1;
+          var p2 = allPlantings[i+1];
+          var start2 = absWeek(p2.year, p2.weekInYear);
+
+          if (currentAbs > end1 && currentAbs < start2) {
+            var gapSize = start2 - end1 - 1;
+            if (gapSize > 5) return true;
+          }
+        }
+        return false;
+      }
+
+      // Encontrar si el ciclo anterior inmediato en este espacio fue Brócoli
+      function isBroccoliAfterBroccoli(loteId, year, weekInYear, ignorePlanting) {
+        var startAbs = absWeek(year, weekInYear);
+        var checkIds = [loteId];
+        if (!loteId.endsWith('A') && !loteId.endsWith('B')) {
+          checkIds.push(loteId + 'A', loteId + 'B');
+        } else if (loteId.endsWith('A') || loteId.endsWith('B')) {
+          checkIds.push(loteId.slice(0, -1));
+        }
+
+        var allPlantings = [];
+        checkIds.forEach(function(cid) {
+          if (plantings[cid]) {
+            plantings[cid].forEach(function(p) {
+              if (ignorePlanting && p === ignorePlanting) return;
+              allPlantings.push(p);
+            });
+          }
+        });
+
+        if (allPlantings.length === 0) return false;
+
+        allPlantings.sort(function(a, b) {
+          return absWeek(a.year, a.weekInYear) - absWeek(b.year, b.weekInYear);
+        });
+
+        // Encontrar la última siembra que termina antes o justo antes de esta nueva fecha
+        var lastEndingBefore = null;
+        for (var i = 0; i < allPlantings.length; i++) {
+          var p = allPlantings[i];
+          var endAbs = absWeek(p.year, p.weekInYear) + CICLOS[p.vegetal].duracion - 1;
+          if (endAbs <= startAbs) {
+            lastEndingBefore = p;
+          }
+        }
+
+        if (lastEndingBefore && lastEndingBefore.vegetal === 'Broccoli') {
+          return true;
+        }
+        return false;
       }
 
       function canPlant(loteId, year, weekInYear, vegName, ignorePlanting) {
@@ -454,13 +530,16 @@ html_code = """
                       }
                       if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
                     } else {
-                      // Ocupación heredada (ej. Lote principal ocupado bloquea A/B, o A/B ocupado bloquea Principal)
                       cellClasses.push('inherited-occupancy');
                       text = '[' + occupancy.sourceId.slice(-2) + ']';
                       if (w === 1 || (!l.isSplit && (act.year === year && act.weekInYear === w))) {
                         areaUsoTotal += l.area;
                       }
                     }
+                  }
+                } else {
+                  if (isLongGap(l.id, year, w)) {
+                    cellClasses.push('long-gap');
                   }
                 }
 
@@ -518,8 +597,8 @@ html_code = """
             pop.className = 'popup';
 
             var rect = cell.getBoundingClientRect();
-            var popWidth = 180;
-            var popHeight = 220;
+            var popWidth = 190;
+            var popHeight = 240;
 
             var left = rect.right + 4;
             if (left + popWidth > window.innerWidth) {
@@ -555,6 +634,7 @@ html_code = """
             VEG_ORDER.forEach(function(v) {
               var isStartWeek = act && occupancy.type === 'direct' && act.year === yr && act.weekInYear === wk;
               var isAllowed = canPlant(loteId, yr, wk, v, isStartWeek ? act : null);
+              var isBroccoliWarning = (v === 'Broccoli' && isBroccoliAfterBroccoli(loteId, yr, wk, isStartWeek ? act : null));
 
               var btn = document.createElement('button');
               btn.textContent = (isStartWeek ? 'Cambiar a ' : '🌱 ') + v;
@@ -566,6 +646,12 @@ html_code = """
 
               btn.onclick = function() {
                 if (!isAllowed) return;
+
+                if (isBroccoliWarning) {
+                  var proceed = window.confirm("Advertencia: No es recomendado sembrar brócoli inmediatamente después de otro brócoli en este espacio. ¿Desea continuar de todos modos?");
+                  if (!proceed) return;
+                }
+
                 if (isStartWeek) {
                   act.vegetal = v;
                 } else {
@@ -632,6 +718,11 @@ html_code = """
             var isValid = canPlant(targetLote, targetYr, targetWk, dragSource.planting.vegetal, dragSource.planting);
 
             if (isValid) {
+              if (dragSource.planting.vegetal === 'Broccoli' && isBroccoliAfterBroccoli(targetLote, targetYr, targetWk, dragSource.planting)) {
+                var proceed = window.confirm("Advertencia: No es recomendado sembrar brócoli inmediatamente después de otro brócoli en este espacio. ¿Desea continuar de todos modos?");
+                if (!proceed) return;
+              }
+
               if (dragSource.loteId !== targetLote) {
                 plantings[dragSource.loteId] = (plantings[dragSource.loteId] || []).filter(function(p){ return p !== dragSource.planting; });
                 if (!plantings[targetLote]) plantings[targetLote] = [];
