@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V9.4",
+    page_title="Planificación de Siembras — V9.5",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -83,20 +83,20 @@ html_code = """
   table.grid { border-collapse:collapse; table-layout:fixed; width: 100%; }
   table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; }
   
-  th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:70px; min-width:70px; height:50px; }
-  th.sumhead { position:sticky; top:0; left:70px; z-index:10; background:#cbe0d7; color:var(--forest); width:130px; min-width:130px; font-size:11px; font-weight:700; border-right:2px solid var(--forest); }
-  th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:80px; min-width:80px;
-    font-weight:600; font-size:11px; padding:4px 2px; }
-  th.lotehead .sub { font-size:9.5px; font-weight:normal; color:var(--muted); }
+  th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:65px; min-width:65px; height:50px; }
+  th.sumhead { position:sticky; top:0; left:65px; z-index:10; background:#cbe0d7; color:var(--forest); width:120px; min-width:120px; font-size:11px; font-weight:700; border-right:2px solid var(--forest); }
+  th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:60px; min-width:60px;
+    font-weight:600; font-size:10.5px; padding:4px 2px; }
+  th.lotehead .sub { font-size:9px; font-weight:normal; color:var(--muted); }
   
   tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:12px; text-align:left; padding:4px 12px; position:sticky; left:0; z-index:9; }
 
-  td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:70px; min-width:70px;
+  td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:65px; min-width:65px;
     font-weight:600; font-size:11px; height:26px; }
-  td.sumcell { position:sticky; left:70px; z-index:7; background:#e4f0ec; width:130px; min-width:130px;
+  td.sumcell { position:sticky; left:65px; z-index:7; background:#e4f0ec; width:120px; min-width:120px;
     font-weight:700; font-size:11px; height:26px; border-right:2px solid var(--forest); color:var(--forest); }
   
-  td.cell { width:80px; height:26px; cursor:pointer; font-size:10px; position:relative; user-select:none; }
+  td.cell { width:60px; min-width:60px; height:26px; cursor:pointer; font-size:9.5px; position:relative; user-select:none; padding:0 1px; }
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; }
   td.cell.planted { font-weight:700; cursor:grab; }
   td.cell.dragover { outline:2px dashed var(--forest); outline-offset:-2px; background:#e2f0d9 !important; }
@@ -326,7 +326,7 @@ html_code = """
                     
                     var val = harvestValue(act, year, w, l.area);
                     if (val > 0) {
-                      text = Math.round(val/100)/10 + 'k';
+                      text = Math.round(val).toLocaleString('es-GT');
                       prodTotal += val;
                     }
                     if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
