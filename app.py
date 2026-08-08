@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — Prototipo V7",
+    page_title="Planificación de Siembras — Prototipo V8",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -89,7 +89,7 @@ html_code = """
   table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; }
   
   th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:70px; min-width:70px; height:50px; }
-  th.sumhead { position:sticky; top:0; left:70px; z-index:10; background:#d5e1df; color:var(--forest); width:110px; min-width:110px; font-size:11px; font-weight:700; border-right:2px solid var(--forest); }
+  th.sumhead { position:sticky; top:0; left:70px; z-index:10; background:#cbe0d7; color:var(--forest); width:130px; min-width:130px; font-size:11px; font-weight:700; border-right:2px solid var(--forest); }
   th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:80px; min-width:80px;
     font-weight:600; font-size:11px; padding:4px 2px; }
   th.lotehead .sub { font-size:9.5px; font-weight:normal; color:var(--muted); }
@@ -98,7 +98,7 @@ html_code = """
 
   td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:70px; min-width:70px;
     font-weight:600; font-size:11px; height:26px; }
-  td.sumcell { position:sticky; left:70px; z-index:7; background:#eef4f2; width:110px; min-width:110px;
+  td.sumcell { position:sticky; left:70px; z-index:7; background:#e4f0ec; width:130px; min-width:130px;
     font-weight:700; font-size:11px; height:26px; border-right:2px solid var(--forest); color:var(--forest); }
   
   td.cell { width:80px; height:26px; cursor:pointer; font-size:10px; position:relative; }
@@ -133,8 +133,8 @@ html_code = """
 
   <div class="toolbar">
     <div class="tabs" id="fincaTabs"></div>
-    <div class="field">Filtrar Vegetal:
-      <select id="vegFilter"><option value="">Todos</option></select>
+    <div class="field">Sumar en Total:
+      <select id="vegFilter"><option value="">Todos los vegetales</option></select>
     </div>
     <div class="field">Años a visualizar:
       <div class="multi-year-selector" id="yearCheckboxes"></div>
@@ -194,7 +194,6 @@ function initLotes() {
 }
 initLotes();
 
-// Datos con clave unificada: `${year}_${weekInYear}`
 const plantings = {};
 plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}, {year: 2026, weekInYear: 48, vegetal: 'Broccoli'}];
 plantings['CH-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}];
@@ -388,7 +387,7 @@ function render(){
   let areaUsoTotal = 0;
   let prodTotal = 0;
 
-  const sumColHeader = selectedVegFilter ? `Total ${selectedVegFilter}` : 'Total Todas Fincas';
+  const sumColHeader = selectedVegFilter ? `Total ${selectedVegFilter} (Todas Fincas)` : 'Total Todos Vegetales';
 
   let tableHtml = `<table class="grid"><thead><tr>
     <th class="corner">Semana</th>
@@ -403,10 +402,10 @@ function render(){
     tableHtml += `<tr><td colspan="${activeLotes.length + 2}" style="padding:20px;color:var(--muted);">Seleccione al menos un año en el filtro.</td></tr>`;
   } else {
     selectedYears.forEach(year => {
-      // Encabezado divisor por cada año
       tableHtml += `<tr class="year-divider"><td colspan="${activeLotes.length + 2}">Año ${year}</td></tr>`;
 
       for (let w = 1; w <= 52; w++) {
+        // La columna de totalización SÍ responde al filtro de vegetal
         const globalHarvest = getTotalHarvestAllFincas(year, w, selectedVegFilter);
         const globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
 
@@ -414,37 +413,33 @@ function render(){
           <td class="weekcell">${w}</td>
           <td class="sumcell">${globalHarvestTxt}</td>`;
 
+        // La vista de los lotes NUNCA se oculta para ver todos los vegetales y evitar colisiones
         activeLotes.forEach(l => {
           const act = findActive(l.id, year, w);
           let cellStyle = '';
           let text = '';
-          let isFilteredOut = false;
           let isStartCell = false;
 
           if (act) {
-            if (selectedVegFilter && act.vegetal !== selectedVegFilter) {
-              isFilteredOut = true;
-            } else {
-              cellStyle = getVegetableStyle(act.vegetal);
-              if (act.year === year && act.weekInYear === w) {
-                text = act.vegetal;
-                isStartCell = true;
-              }
-              
-              const val = harvestValue(act, year, w, l.area);
-              if (val > 0) {
-                text = Math.round(val/100)/10 + 'k';
-                prodTotal += val;
-              }
-              if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
+            cellStyle = getVegetableStyle(act.vegetal);
+            if (act.year === year && act.weekInYear === w) {
+              text = act.vegetal;
+              isStartCell = true;
             }
+            
+            const val = harvestValue(act, year, w, l.area);
+            if (val > 0) {
+              text = Math.round(val/100)/10 + 'k';
+              prodTotal += val;
+            }
+            if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
           }
 
-          const draggableAttr = isStartCell && !isFilteredOut ? 'draggable="true"' : '';
-          const draggableClass = isStartCell && !isFilteredOut ? 'draggable' : '';
+          const draggableAttr = isStartCell ? 'draggable="true"' : '';
+          const draggableClass = isStartCell ? 'draggable' : '';
 
-          tableHtml += `<td class="cell ${act && !isFilteredOut?'planted':''} ${draggableClass}" ${draggableAttr} style="${cellStyle}" data-lote="${l.id}" data-year="${year}" data-week="${w}">
-            ${isFilteredOut ? '' : text}
+          tableHtml += `<td class="cell ${act?'planted':''} ${draggableClass}" ${draggableAttr} style="${cellStyle}" data-lote="${l.id}" data-year="${year}" data-week="${w}">
+            ${text}
           </td>`;
         });
 
