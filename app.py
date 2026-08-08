@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.9",
+    page_title="Planificación de Siembras — V10.10",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -140,7 +140,7 @@ html_code = """
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Jerarquía y Alertas Visuales (V10.9)</h1>
+    <h1>Planificación de Siembras — Independencia A/B y Bloqueo Completo (V10.10)</h1>
   </header>
 
   <div class="toolbar">
@@ -285,7 +285,9 @@ html_code = """
         return null;
       }
 
-      // Revisa si hay ocupación directa o heredada por los sub-lotes / lote principal
+      // Lógica de ocupación refinada:
+      // - Si es A o B: Se evalúa de forma independiente (A no bloquea a B, y viceversa).
+      // - Si es el Lote Principal: Se bloquea si el propio lote principal tiene siembra, O SI CUALQUIERA de sus sub-lotes (A o B) tiene actividad.
       function getDetailedOccupancy(loteId, year, weekInYear) {
         // 1. Revisión directa
         var direct = findActive(loteId, year, weekInYear);
@@ -293,24 +295,12 @@ html_code = """
           return { planting: direct, type: 'direct', sourceId: loteId };
         }
 
-        // 2. Si es un lote principal colapsado, revisar si A o B tienen siembras activas
+        // 2. Si es el lote principal colapsado, verificar si A o B están activos
         if (!loteId.endsWith('A') && !loteId.endsWith('B')) {
           var subA = findActive(loteId + 'A', year, weekInYear);
           if (subA) return { planting: subA, type: 'inherited', sourceId: loteId + 'A' };
           var subB = findActive(loteId + 'B', year, weekInYear);
           if (subB) return { planting: subB, type: 'inherited', sourceId: loteId + 'B' };
-        }
-
-        // 3. Si es un sub-lote (A o B), revisar si el padre o el hermano están ocupados
-        if (loteId.endsWith('A') || loteId.endsWith('B')) {
-          var baseId = loteId.slice(0, -1);
-          var siblingId = loteId.endsWith('A') ? baseId + 'B' : baseId + 'A';
-          
-          var parentAct = findActive(baseId, year, weekInYear);
-          if (parentAct) return { planting: parentAct, type: 'inherited', sourceId: baseId };
-
-          var siblingAct = findActive(siblingId, year, weekInYear);
-          if (siblingAct) return { planting: siblingAct, type: 'inherited', sourceId: siblingId };
         }
 
         return null;
@@ -323,16 +313,19 @@ html_code = """
         var startAbs = absWeek(year, weekInYear);
         var endAbs = startAbs + cycle.duracion - 1;
 
-        var relatedIds = [];
-        if (loteId.endsWith('A') || loteId.endsWith('B')) {
+        // Determinar qué IDs evaluar para conflicto
+        var checkIds = [loteId];
+        if (!loteId.endsWith('A') && !loteId.endsWith('B')) {
+          // Si intentas sembrar en el lote principal, choca si el principal o A o B están ocupados
+          checkIds.push(loteId + 'A', loteId + 'B');
+        } else if (loteId.endsWith('A') || loteId.endsWith('B')) {
+          // Si intentas sembrar en A, solo choca con el propio A o con el lote principal completo. ¡NO choca con B!
           var baseId = loteId.slice(0, -1);
-          relatedIds = [baseId, baseId + 'A', baseId + 'B'];
-        } else {
-          relatedIds = [loteId, loteId + 'A', loteId + 'B'];
+          checkIds.push(baseId);
         }
 
-        for (var r = 0; r < relatedIds.length; r++) {
-          var checkId = relatedIds[r];
+        for (var r = 0; r < checkIds.length; r++) {
+          var checkId = checkIds[r];
           var list = plantings[checkId] || [];
           for (var i = 0; i < list.length; i++) {
             var p = list[i];
@@ -457,10 +450,10 @@ html_code = """
                       }
                       if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
                     } else {
-                      // Ocupación heredada por un sub-lote o hermano
+                      // Ocupación heredada en el lote principal por A o B
                       cellClasses.push('inherited-occupancy');
                       text = '[' + occupancy.sourceId.slice(-2) + ']';
-                      if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
+                      if (w === 1) areaUsoTotal += l.area; // Se cuenta el área total del lote
                     }
                   }
                 }
@@ -548,15 +541,8 @@ html_code = """
               } else {
                 var msgInherited = document.createElement('div');
                 msgInherited.className = 'msg-occupied';
-                msgInherited.textContent = 'Bloqueado por ' + occupancy.sourceId + ' (' + act.vegetal + ')';
+                msgInherited.textContent = 'Ocupado por sub-lote ' + occupancy.sourceId;
                 pop.appendChild(msgInherited);
-              }
-
-              if (act.year !== yr || act.weekInYear !== wk) {
-                var msg = document.createElement('div');
-                msg.className = 'msg-occupied';
-                msg.textContent = 'Ciclo activo en curso';
-                pop.appendChild(msg);
               }
             }
 
@@ -569,7 +555,7 @@ html_code = """
               btn.disabled = !isAllowed;
 
               if (!isAllowed) {
-                btn.title = "Conflicto: El lote o sus sub-lotes están ocupados";
+                btn.title = "Conflicto de fechas en el lote";
               }
 
               btn.onclick = function() {
