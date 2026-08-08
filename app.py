@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.6",
+    page_title="Planificación de Siembras — V10.7",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -40,7 +40,7 @@ html_code = """
     --muted: #6b7268;
     --alert: #b3261e;
     --gap-bg: #fdf2f2;
-    --split-head: #d9edf7; /* Color distintivo para lotes partidos */
+    --split-head: #d9edf7;
     --split-head-fg: #1d394a;
     --ejote-bg: #ddebf7; --ejote-fg: #1f4e79;
     --broccoli-bg: #e2efda; --broccoli-fg: #375623;
@@ -89,12 +89,14 @@ html_code = """
   th.sumhead { position:sticky; top:0; left:50px; z-index:10; background:#cbe0d7; color:var(--forest); width:95px; min-width:95px; font-size:10px; font-weight:700; border-right:2px solid var(--forest); }
   
   th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:45px; min-width:45px; max-width:45px;
-    font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; cursor:pointer; }
-  th.lotehead:hover { background:#e2e0d5; }
+    font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; }
   th.lotehead.is-split { background: var(--split-head); color: var(--split-head-fg); border-bottom: 2px solid #bce8f1; }
-  th.lotehead .sub { font-size:8.5px; font-weight:normal; color:var(--muted); }
+  th.lotehead .sub { font-size:8.5px; font-weight:normal; color:var(--muted); display:flex; align-items:center; justify-content:center; gap:2px; }
   th.lotehead.is-split .sub { color: #31708f; }
   
+  .expand-btn { background:none; border:none; cursor:pointer; font-size:9px; padding:0 2px; color:var(--forest); font-weight:bold; }
+  .expand-btn:hover { color:#000; }
+
   tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:11px; text-align:left; padding:3px 8px; position:sticky; left:0; z-index:9; }
 
   td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:50px; min-width:50px; font-weight:600; font-size:10px; height:24px; }
@@ -136,7 +138,7 @@ html_code = """
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Lotes Partidos y Ciclos Flexibles</h1>
+    <h1>Planificación de Siembras — Lotes Flexibles (Completos y Partidos)</h1>
   </header>
 
   <div class="toolbar">
@@ -225,12 +227,13 @@ html_code = """
         }
       });
 
-      var partitions = {};
+      var expandedLots = {}; // Controla qué lotes base muestran sus sub-lotes A y B
       var plantings = {};
-      plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}, {year: 2026, weekInYear: 20, vegetal: 'Broccoli'}];
+      plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}];
+      plantings['NP-1A'] = [{year: 2026, weekInYear: 20, vegetal: 'Ejote'}];
+      plantings['NP-1B'] = [{year: 2026, weekInYear: 20, vegetal: 'China'}];
       plantings['NP-5'] = [{year: 2026, weekInYear: 4, vegetal: 'Ejote'}];
       plantings['CH-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}];
-      plantings['TM-12'] = [{year: 2026, weekInYear: 2, vegetal: 'China'}];
 
       var dragSource = null;
       var activePopup = null;
@@ -248,10 +251,10 @@ html_code = """
         var fincaBase = BASE_LOTES.filter(function(l) { return l.finca === fincaName; });
         
         fincaBase.forEach(function(l) {
-          if (partitions[l.id]) {
-            var p = partitions[l.id];
-            result.push({ id: p.subA.id, finca: fincaName, nombre: p.subA.id, area: p.subA.area, parentId: l.id, isSplit: true });
-            result.push({ id: p.subB.id, finca: fincaName, nombre: p.subB.id, area: p.subB.area, parentId: l.id, isSplit: true });
+          if (expandedLots[l.id]) {
+            var halfArea = Number((l.area / 2).toFixed(2));
+            result.push({ id: l.id + 'A', finca: fincaName, nombre: l.id + 'A', area: halfArea, parentId: l.id, isSplit: true });
+            result.push({ id: l.id + 'B', finca: fincaName, nombre: l.id + 'B', area: halfArea, parentId: l.id, isSplit: true });
           } else {
             result.push({ id: l.id, finca: fincaName, nombre: l.nombre, area: l.area, parentId: null, isSplit: false });
           }
@@ -300,31 +303,6 @@ html_code = """
           }
         }
         return true;
-      }
-
-      function isLongGapWeek(loteId, year, weekInYear) {
-        var list = plantings[loteId] || [];
-        if (list.length === 0) return false;
-
-        var sorted = list.slice().sort(function(a, b) {
-          return absWeek(a.year, a.weekInYear) - absWeek(b.year, b.weekInYear);
-        });
-
-        var currentAbs = absWeek(year, weekInYear);
-        if (findActive(loteId, year, weekInYear)) return false;
-
-        for (var i = 0; i < sorted.length - 1; i++) {
-          var p1 = sorted[i];
-          var p2 = sorted[i+1];
-          var end1 = absWeek(p1.year, p1.weekInYear) + CICLOS[p1.vegetal].duracion - 1;
-          var start2 = absWeek(p2.year, p2.weekInYear);
-
-          if (currentAbs > end1 && currentAbs < start2) {
-            var gapSize = start2 - end1 - 1;
-            if (gapSize > 4) return true;
-          }
-        }
-        return false;
       }
 
       function harvestValue(planting, year, weekInYear, area){
@@ -386,7 +364,16 @@ html_code = """
         
         activeLotes.forEach(function(l) {
           var splitClass = l.isSplit ? ' is-split' : '';
-          tableHtml += '<th class="lotehead' + splitClass + '" data-lotid="' + l.id + '" title="Clic para gestionar partición">' + l.nombre + '<div class="sub">' + l.area + 'ha</div></th>';
+          var baseId = l.isSplit ? l.parentId : l.id;
+          var toggleIcon = l.isSplit ? '▼' : '▶';
+          
+          tableHtml += '<th class="lotehead' + splitClass + '" data-lotid="' + l.id + '">' + 
+            l.nombre + 
+            '<div class="sub">' +
+              (!l.isSplit ? '<button class="expand-btn" data-baseid="' + baseId + '" title="Desplegar A y B">▶</button>' : '<button class="expand-btn" data-baseid="' + baseId + '" title="Unificar Lote">▼</button>') +
+              l.area + 'ha' +
+            '</div>' +
+          '</th>';
         });
         tableHtml += '</tr></thead><tbody>';
 
@@ -426,10 +413,6 @@ html_code = """
                     }
                     if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
                   }
-                } else {
-                  if (isLongGapWeek(l.id, year, w)) {
-                    cellClasses.push('long-gap');
-                  }
                 }
 
                 tableHtml += '<td class="' + cellClasses.join(' ') + '" style="' + cellStyle + '" ' +
@@ -454,77 +437,16 @@ html_code = """
       }
 
       function bindGridEvents() {
-        document.querySelectorAll('th.lotehead').forEach(function(th) {
-          th.onclick = function(e) {
+        document.querySelectorAll('.expand-btn').forEach(function(btn) {
+          btn.onclick = function(e) {
             e.stopPropagation();
-            closePopup();
-
-            var lotId = th.dataset.lotid;
-            var baseLotId = lotId;
-            var isSub = false;
-            if (lotId.endsWith('A') || lotId.endsWith('B')) {
-              baseLotId = lotId.slice(0, -1);
-              isSub = true;
-            }
-
-            var baseLotObj = BASE_LOTES.find(function(l) { return l.id === baseLotId; });
-            if (!baseLotObj) return;
-
-            var pop = document.createElement('div');
-            pop.className = 'popup';
-
-            var rect = th.getBoundingClientRect();
-            pop.style.left = Math.min(rect.left, window.innerWidth - 190) + 'px';
-            pop.style.top = (rect.bottom + 4) + 'px';
-
-            var titleDiv = document.createElement('div');
-            titleDiv.style.fontWeight = '700';
-            titleDiv.style.marginBottom = '6px';
-            titleDiv.style.fontSize = '11px';
-            titleDiv.style.color = 'var(--forest)';
-            titleDiv.textContent = 'Gestión Lote: ' + lotId;
-            pop.appendChild(titleDiv);
-
-            if (!partitions[baseLotId] && !isSub) {
-              var btnSplit = document.createElement('button');
-              btnSplit.className = 'action-btn';
-              btnSplit.textContent = '✂️ Partir en A y B';
-              btnSplit.onclick = function() {
-                var halfArea = Number((baseLotObj.area / 2).toFixed(2));
-                partitions[baseLotId] = {
-                  parentId: baseLotId,
-                  subA: { id: baseLotId + 'A', area: halfArea },
-                  subB: { id: baseLotId + 'B', area: halfArea }
-                };
-                if (plantings[baseLotId]) {
-                  plantings[baseLotId + 'A'] = plantings[baseLotId];
-                  delete plantings[baseLotId];
-                }
-                render();
-              };
-              pop.appendChild(btnSplit);
+            var baseId = btn.dataset.baseid;
+            if (expandedLots[baseId]) {
+              delete expandedLots[baseId];
             } else {
-              var parentKey = isSub ? baseLotId : lotId;
-              
-              var btnMerge = document.createElement('button');
-              btnMerge.className = 'danger';
-              btnMerge.textContent = '🔗 Unificar para ciclo completo';
-              btnMerge.onclick = function() {
-                var combined = [];
-                if (plantings[parentKey + 'A']) combined = combined.concat(plantings[parentKey + 'A']);
-                if (plantings[parentKey + 'B']) combined = combined.concat(plantings[parentKey + 'B']);
-                
-                plantings[parentKey] = combined;
-                delete plantings[parentKey + 'A'];
-                delete plantings[parentKey + 'B'];
-                delete partitions[parentKey];
-                render();
-              };
-              pop.appendChild(btnMerge);
+              expandedLots[baseId] = true;
             }
-
-            document.body.appendChild(pop);
-            activePopup = pop;
+            render();
           };
         });
 
@@ -585,10 +507,6 @@ html_code = """
               var btn = document.createElement('button');
               btn.textContent = (isStartWeek ? 'Cambiar a ' : '🌱 ') + v;
               btn.disabled = !isAllowed;
-
-              if (!isAllowed && (!act || !isStartWeek)) {
-                btn.title = "Conflicto: No hay espacio suficiente para el ciclo de " + v;
-              }
 
               btn.onclick = function() {
                 if (!isAllowed) return;
