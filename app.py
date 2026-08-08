@@ -235,13 +235,11 @@ function hasConflict(loteId, year, weekInYear, vegetal, ignore){
   return false;
 }
 
-// Alerta preventiva cuando se siembra Broccoli de forma consecutiva
 function isConsecutiveBroccoli(loteId, year, weekInYear, vegetal, ignore){
   if (vegetal !== 'Broccoli') return false;
   const list = (plantings[loteId] || []).filter(p => p !== ignore);
   const currentAbs = absWeek(year, weekInYear);
   
-  // Buscar siembras anteriores en el tiempo
   const previousPlantings = list
     .filter(p => absWeek(p.year, p.weekInYear) < currentAbs)
     .sort((a,b) => absWeek(b.year, b.weekInYear) - absWeek(a.year, a.weekInYear));
@@ -438,7 +436,6 @@ function render(){
       tableHtml += `<tr class="year-divider"><td colspan="${activeLotes.length + 2}">Año ${year}</td></tr>`;
 
       for (let w = 1; w <= 52; w++) {
-        // Total Consolidado (Resumen)
         const globalHarvest = getTotalHarvestAllFincas(year, w, selectedSummaryVeg);
         const globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
 
@@ -446,7 +443,6 @@ function render(){
           <td class="weekcell">${w}</td>
           <td class="sumcell">${globalHarvestTxt}</td>`;
 
-        // Renderizado de Lotes con su filtro independiente
         activeLotes.forEach(l => {
           const act = findActive(l.id, year, w);
           let cellStyle = '';
@@ -552,7 +548,6 @@ function render(){
   });
 }
 
-// Llenar selectores de vegetales
 const optionsVeg = '<option value="">Todos los vegetales</option>' + 
   VEG_ORDER.map(v => `<option value="${v}">${v}</option>`).join('');
 
