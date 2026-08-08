@@ -1,300 +1,397 @@
-import base64
-import os
-import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
+import pandas as pd
+import json
+from datetime import datetime, timedelta
 
+# Configuración de la página
 st.set_page_config(
-    page_title='Cropplaner - Sistema Integral y Catálogos',
-    layout='wide',
-    initial_sidebar_state='collapsed',
+    page_title="Planificación de Siembras — V11.0",
+    page_icon="🌱",
+    layout="wide"
 )
 
-st.markdown(
-    """
+# Estilos CSS personalizados para replicar la interfaz web original
+st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .block-container {
-        padding: 0rem !important;
-        max-width: 100% !important;
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-
-# Cargar datos de Siesa Plan.xlsx para los catálogos
-@st.cache_data
-def cargar_excel_siesa():
-  excel_path = 'Siesa Plan.xlsx'
-  df_rend = pd.read_excel(excel_path, sheet_name='Rendimientos', header=1)
-
-  df_raw_curva = pd.read_excel(
-      excel_path, sheet_name='Rendimiento por vegetal', header=None
-  )
-  header_row = df_raw_curva.iloc[1, 2:7].values
-  df_curva = df_raw_curva.iloc[2:, [1, 2, 3, 4, 5, 6]].copy()
-  df_curva.columns = ['Semana'] + list(header_row)
-  df_curva['Semana'] = pd.to_numeric(df_curva['Semana'], errors='coerce')
-  df_curva = df_curva.dropna(subset=['Semana']).set_index('Semana')
-
-  return df_rend, df_curva
-
-
-df_rendimientos, df_curvas = cargar_excel_siesa()
-
-# --- MENÚ PRINCIPAL DE NAVEGACIÓN ---
-menu_principal = st.selectbox(
-    'Seleccione el Módulo de Cropplaner',
-    [
-        '🌱 Cropplaner Principal (V11.0)',
-        '📂 Catálogo de Fincas y Lotes (Áreas Reales)',
-        '📊 Catálogo de Rendimientos y Vegetales (Siesa Plan)',
-    ],
-    label_visibility='collapsed',
-)
-
-if menu_principal == '🌱 Cropplaner Principal (V11.0)':
-  html_content = """
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-    <meta charset="UTF-8">
-    <title>Planificación de Siembras - V11.0</title>
-    <style>
-      :root {
-        --ink: #1b2e26; --paper: #f6f5f0; --panel: #ffffff; --line: #dcd8cc;
-        --forest: #1f4e3d; --muted: #6b7268; --alert: #b3261e; --gap-bg: #fbeae8;
-        --split-head: #d9edf7; --split-head-fg: #1d394a;
+    :root {
+        --ink: #1b2e26;
+        --paper: #f6f5f0;
+        --panel: #ffffff;
+        --line: #dcd8cc;
+        --forest: #1f4e3d;
+        --muted: #6b7268;
+        --alert: #b3261e;
+        --gap-bg: #fbeae8;
+        --split-head: #d9edf7;
+        --split-head-fg: #1d394a;
         --ejote-bg: #ddebf7; --ejote-fg: #1f4e79;
         --broccoli-bg: #e2efda; --broccoli-fg: #375623;
         --grano-bg: #fce4d6; --grano-fg: #833c00;
         --china-bg: #e4dfec; --china-fg: #5f3f7a;
         --dulce-bg: #fff2cc; --dulce-fg: #7f6000;
-      }
-      * { box-sizing: border-box; }
-      html, body { margin:0; padding:0; background: var(--paper); color: var(--ink);
-        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; height: 100vh; overflow: hidden; }
-      #app { display:flex; flex-direction:column; height:100vh; width:100vw; }
-      header { background: var(--forest); color: #fff; padding: 8px 16px; display:flex; align-items:center; justify-content:space-between; }
-      header h1 { font-size: 15px; margin:0; font-weight:600; }
-      .toolbar { background: var(--panel); border-bottom:1px solid var(--line); padding:6px 12px;
-        display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-      .tool-section { display:flex; align-items:center; gap:6px; }
-      .tool-divider { width:1px; height:22px; background:var(--line); margin:0 2px; }
-      .tabs { display:flex; gap:3px; }
-      .tab { padding:4px 10px; border-radius:4px; border:1px solid var(--line); background:#fff;
-        cursor:pointer; font-size:11px; font-weight:600; }
-      .tab.active { background: var(--forest); color:#fff; border-color:var(--forest); }
-      .field-group { display:flex; flex-direction:column; gap:1px; }
-      .field-group label { font-size:9px; font-weight:700; text-transform:uppercase; color:var(--forest); }
-      .field select { padding:2px 4px; border:1px solid var(--line); border-radius:4px; font-size:11px; background:#fff; }
-      .stat { background:#f0efe8; border:1px solid var(--line); border-radius:4px; padding:2px 6px; text-align:right; }
-      .stat b { font-size:11px; color: var(--forest); display:block; }
-      .stat span { font-size:8.5px; color:var(--muted); text-transform:uppercase; }
-      .grid-wrap { flex:1; overflow:auto; position:relative; background: var(--panel); width:100%; height: calc(100vh - 90px); }
-      table.grid { border-collapse:collapse; table-layout:fixed; width: max-content; }
-      table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; padding:0; }
-      th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:45px; min-width:45px; height:40px; font-size:9.5px; }
-      th.sumhead { position:sticky; top:0; left:45px; z-index:10; background:#cbe0d7; color:var(--forest); width:85px; min-width:85px; font-size:9.5px; font-weight:700; border-right:2px solid var(--forest); }
-      th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:42px; min-width:42px; max-width:42px; font-weight:700; font-size:9.5px; padding:2px 1px; }
-      th.lotehead .sub { font-size:8px; font-weight:normal; color:var(--muted); }
-      tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:10.5px; text-align:left; padding:3px 8px; position:sticky; left:0; z-index:9; }
-      td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:45px; min-width:45px; font-weight:600; font-size:9.5px; height:22px; }
-      td.sumcell { position:sticky; left:45px; z-index:7; background:#e4f0ec; width:85px; min-width:85px; font-weight:700; font-size:9.5px; height:22px; border-right:2px solid var(--forest); color:var(--forest); }
-      td.cell { width:42px; min-width:42px; max-width:42px; height:22px; cursor:pointer; font-size:8px; position:relative; user-select:none; }
-      td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; z-index:5; }
-      td.cell.Ejote { background-color: var(--ejote-bg); color: var(--ejote-fg); font-weight:700; }
-      td.cell.Broccoli { background-color: var(--broccoli-bg); color: var(--broccoli-fg); font-weight:700; }
-      td.cell.Grano { background-color: var(--grano-bg); color: var(--grano-fg); font-weight:700; }
-      td.cell.China { background-color: var(--china-bg); color: var(--china-fg); font-weight:700; }
-      td.cell.Dulce { background-color: var(--dulce-bg); color: var(--dulce-fg); font-weight:700; }
-      .cell-val { display:block; width:100%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; line-height:22px; }
-    </style>
-    </head>
-    <body>
-    <div id="app">
-      <header>
-        <h1>Planificación de Siembras — V11.0</h1>
-      </header>
-      <div class="toolbar">
-        <div class="tool-section"><div class="tabs" id="fincaTabs"></div></div>
-        <div class="tool-divider"></div>
-        <div class="tool-section"><div class="field-group"><label>🌱 Filtrar Vegetal</label><div class="field"><select id="vegFilter"><option value="">Todos</option><option value="Ejote">Ejote</option><option value="Broccoli">Broccoli</option><option value="Grano">Grano</option><option value="China">China</option><option value="Dulce">Dulce</option></select></div></div></div>
-        <div class="tool-section" style="margin-left:auto;">
-          <div class="stat"><b id="statArea">0.0 ha</b><span>Área Total</span></div>
-        </div>
-      </div>
-      <div class="grid-wrap" id="gridWrap"></div>
-    </div>
-    <script>
-    (function() {
-      function init() {
-        var YEARS = [2026, 2027];
-        var FINCAS = ['NP','CH','TM','PV','SM'];
-        var LOTES = [];
-        var idC = 1;
-        FINCAS.forEach(function(f) {
-          var count = (f === 'NP') ? 40 : 20;
-          for (var i = 1; i <= count; i++) {
-            LOTES.push({ id: f + '-' + i, finca: f, nombre: f + '-' + i, area: 1.0 });
-            idC++;
-          }
-        });
+        --inherited-bg: #fff3cd; --inherited-fg: #856404; --inherited-border: #ffeeba;
+    }
+    .main {
+        background-color: var(--paper);
+    }
+    .stButton>button {
+        background-color: var(--forest);
+        color: white;
+        border-radius: 5px;
+        border: none;
+        font-weight: 600;
+    }
+    .stButton>button:hover {
+        background-color: #15382b;
+        color: white;
+    }
+    .stat-card {
+        background: #f0efe8;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 10px;
+        text-align: center;
+    }
+    .stat-card b {
+        font-size: 16px;
+        color: var(--forest);
+        display: block;
+    }
+    .stat-card span {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ----------------- INICIALIZACIÓN DE ESTADOS -----------------
+if 'ciclos' not in st.session_state:
+    st.session_state.ciclos = {
+        "Ejote":    {"duracionBase": 11, "cosechas": [[10,0.35],[11,0.42],[12,0.23]], "color":"ejote", "coldExtend":True},
+        "Broccoli": {"duracionBase": 15, "cosechas": [[10,0.10],[11,0.20],[12,0.17],[13,0.10],[14,0.23],[15,0.20]], "color":"broccoli", "coldExtend":False},
+        "Grano":    {"duracionBase": 14, "cosechas": [[11,0.30],[12,0.36],[13,0.24],[14,0.10]], "color":"grano", "coldExtend":False},
+        "China":    {"duracionBase": 13, "cosechas": [[10,0.11],[11,0.45],[12,0.37],[13,0.07]], "color":"china", "coldExtend":False},
+        "Dulce":    {"duracionBase": 14, "cosechas": [[11,0.10],[12,0.20],[13,0.41],[14,0.29]], "color":"dulce", "coldExtend":False}
+    }
+
+if 'rendimientos' not in st.session_state:
+    st.session_state.rendimientos = {
+        "Ejote": {w: 10900 if w < 10 else (11900 if w < 28 else (11600 if w < 45 else 10900)) for w in range(1, 54)},
+        "Broccoli": {w: 8000 if w < 10 else (10000 if w < 28 else (6500 if w < 45 else 8000)) for w in range(1, 54)},
+        "China": {w: 7500 for w in range(1, 54)},
+        "Dulce": {w: 12000 if w < 6 else (10000 if w < 15 else (7000 if w < 38 else 10500)) for w in range(1, 54)},
+        "Grano": {w: 8250 for w in range(1, 54)}
+    }
+
+if 'fincas' not in st.session_state:
+    st.session_state.fincas = ['NP', 'CH', 'TM', 'PV', 'SM']
+
+if 'base_lotes' not in st.session_state:
+    st.session_state.base_lotes = []
+    area_seed = [1.0, 1.2, 0.8, 1.5, 1.1, 0.9, 1.3, 1.4]
+    id_counter = 0
+    for f in st.session_state.fincas:
+        count = 40 if f == 'NP' else 30
+        for i in range(1, count + 1):
+            st.session_state.base_lotes.append({
+                "id": f"{f}-{i}",
+                "finca": f,
+                "nombre": f"{f}-{i}",
+                "area": area_seed[id_counter % len(area_seed)]
+            })
+            id_counter += 1
+
+if 'expanded_lots' not in st.session_state:
+    st.session_state.expanded_lots = {}
+
+if 'plantings' not in st.session_state:
+    st.session_state.plantings = {
+        'NP-1': [{'year': 2026, 'weekInYear': 1, 'vegetal': 'Broccoli'}],
+        'NP-1A': [{'year': 2026, 'weekInYear': 20, 'vegetal': 'Ejote'}],
+        'NP-1B': [{'year': 2026, 'weekInYear': 20, 'vegetal': 'China'}],
+        'NP-5': [{'year': 2026, 'weekInYear': 4, 'vegetal': 'Ejote'}],
+        'CH-1': [{'year': 2026, 'weekInYear': 1, 'vegetal': 'China'}]
+    }
+
+# ----------------- FUNCIONES DE LÓGICA AGRÍCOLA -----------------
+def abs_week(year, week_in_year):
+    return (year - 2020) * 52 + week_in_year
+
+def is_cold_season(week_in_year):
+    return (week_in_year >= 45 or week_in_year <= 8)
+
+def get_cycle_duration(vegetal, start_year, start_week):
+    veg = st.session_state.ciclos.get(vegetal)
+    if not veg:
+        return 12
+    base = veg["duracionBase"]
+    if veg.get("coldExtend", False):
+        end_week_approx = start_week + base - 1
+        norm_end_week = ((end_week_approx - 1) % 52) + 1
+        if is_cold_season(start_week) or is_cold_season(norm_end_week):
+            return base + 1
+    return base
+
+def get_active_lotes_for_finca(finca_name):
+    result = []
+    finca_base = [l for l in st.session_state.base_lotes if l['finca'] == finca_name]
+    for l in finca_base:
+        if st.session_state.expanded_lots.get(l['id']):
+            half_area = round(l['area'] / 2, 2)
+            result.append({"id": l['id'] + 'A', "finca": finca_name, "nombre": l['id'] + 'A', "area": half_area, "parentId": l['id'], "isSplit": True})
+            result.append({"id": l['id'] + 'B', "finca": finca_name, "nombre": l['id'] + 'B', "area": half_area, "parentId": l['id'], "isSplit": True})
+        else:
+            result.append({"id": l['id'], "finca": finca_name, "nombre": l['nombre'], "area": l['area'], "parentId": None, "isSplit": False})
+    return result
+
+def get_all_active_lotes_flat():
+    all_lotes = []
+    for f in st.session_state.fincas:
+        all_lotes.extend(get_active_lotes_for_finca(f))
+    return all_lotes
+
+def find_active(lote_id, year, week_in_year):
+    p_list = st.session_state.plantings.get(lote_id, [])
+    current_abs = abs_week(year, week_in_year)
+    for p in p_list:
+        dur = get_cycle_duration(p['vegetal'], p['year'], p['weekInYear'])
+        start_abs = abs_week(p['year'], p['weekInYear'])
+        if start_abs <= current_abs < start_abs + dur:
+            return p
+    return None
+
+def get_detailed_occupancy(lote_id, year, week_in_year):
+    direct = find_active(lote_id, year, week_in_year)
+    if direct:
+        return {"planting": direct, "type": "direct", "sourceId": lote_id}
+    
+    if not lote_id.endswith('A') and not lote_id.endswith('B'):
+        sub_a = find_active(lote_id + 'A', year, week_in_year)
+        if sub_a:
+            return {"planting": sub_a, "type": "inherited", "sourceId": lote_id + 'A'}
+        sub_b = find_active(lote_id + 'B', year, week_in_year)
+        if sub_b:
+            return {"planting": sub_b, "type": "inherited", "sourceId": lote_id + 'B'}
+            
+    if lote_id.endswith('A') or lote_id.endswith('B'):
+        base_id = lote_id[:-1]
+        parent_act = find_active(base_id, year, week_in_year)
+        if parent_act:
+            return {"planting": parent_act, "type": "inherited", "sourceId": base_id}
+            
+    return None
+
+def harvest_value(planting, year, week_in_year, area):
+    c = st.session_state.ciclos.get(planting['vegetal'])
+    if not c:
+        return 0
+    current_abs = abs_week(year, week_in_year)
+    start_abs = abs_week(planting['year'], planting['weekInYear'])
+    rel = current_abs - start_abs + 1
+    
+    cosecha = next((item for item in c['cosechas'] if item[0] == rel), None)
+    if not cosecha:
+        return 0
         
-        var plantings = {
-          'NP-1': [{year: 2026, weekInYear: 5, vegetal: 'Broccoli'}],
-          'NP-2': [{year: 2026, weekInYear: 8, vegetal: 'Ejote'}],
-          'NP-3': [{year: 2026, weekInYear: 12, vegetal: 'Grano'}]
-        };
+    factor_pct = cosecha[1]
+    calendar_week = ((week_in_year - 1) % 52) + 1
+    veg_rend_dict = st.session_state.rendimientos.get(planting['vegetal'], {})
+    rendimiento_semanal_base = veg_rend_dict.get(calendar_week, 8000)
+    
+    return area * rendimiento_semanal_base * factor_pct
+
+def get_total_harvest_all_fincas(year, week_in_year, target_veg):
+    sum_val = 0
+    active_lots = get_all_active_lotes_flat()
+    for l in active_lots:
+        p_list = st.session_state.plantings.get(l['id'], [])
+        for p in p_list:
+            if not target_veg or p['vegetal'] == target_veg:
+                sum_val += harvest_value(p, year, week_in_year, l['area'])
+    return sum_val
+
+# ----------------- INTERFAZ PRINCIPAL -----------------
+st.header("Planificación de Siembras — V11.0 (Rendimientos Reales Excel & Época Fría)")
+
+# Barra de herramientas superior
+with st.container():
+    col_tabs, col_sum_filt, col_lote_filt, col_years = st.columns([1.5, 1.2, 1.2, 1.8])
+    
+    with col_tabs:
+        st.markdown("**Fincas**")
+        selected_finca = st.radio("Finca", st.session_state.fincas, horizontal=True, label_visibility="collapsed")
         
-        var currentFinca = 'NP';
-        var selectedVeg = '';
+    with col_sum_filt:
+        st.markdown("**📊 Resumen General**")
+        summary_veg_filter = st.selectbox("Resumen Veg", ["Todos"] + list(st.session_state.ciclos.keys()), label_visibility="collapsed")
+        target_summary_veg = None if summary_veg_filter == "Todos" else summary_veg_filter
+        
+    with col_lote_filt:
+        st.markdown("**🌱 Matriz Planificación**")
+        lote_veg_filter = st.selectbox("Lote Veg", ["Ver Todos"] + list(st.session_state.ciclos.keys()), label_visibility="collapsed")
+        target_lote_veg = None if lote_veg_filter == "Ver Todos" else lote_veg_filter
+        
+    with col_years:
+        st.markdown("**📅 Años Activos**")
+        selected_years = st.multiselect("Años", [2025, 2026, 2027, 2028], default=[2026, 2027], label_visibility="collapsed")
 
-        function render() {
-          var tabsWrap = document.getElementById('fincaTabs');
-          tabsWrap.innerHTML = FINCAS.map(function(f){ 
-            return '<div class="tab ' + (currentFinca===f?'active':'') + '" data-finca="' + f + '">' + f + '</div>'; 
-          }).join('');
-          tabsWrap.querySelectorAll('.tab').forEach(function(btn) {
-            btn.onclick = function() { currentFinca = btn.dataset.finca; render(); };
-          });
+st.divider()
 
-          var filteredLotes = LOTES.filter(function(l){ return l.finca === currentFinca; });
+# Gestión de catálogos mediante Expander desplegable
+with st.expander("⚙ Configuración de Catálogos (Vegetales, Fincas y Lotes)", expanded=False):
+    cat_tab1, cat_tab2, cat_tab3 = st.tabs(["Vegetales y Rendimientos", "Fincas", "Lotes"])
+    
+    with cat_tab1:
+        st.subheader("Administrar Vegetales")
+        for vname, cdata in list(st.session_state.ciclos.items()):
+            cols = st.columns([2, 1, 2, 1])
+            with cols[0]:
+                st.markdown(f"**{vname}** (Base: {cdata['duracionBase']} sem.)")
+            with cols[1]:
+                cdata['coldExtend'] = st.checkbox(f"+1 sem fría", value=cdata.get('coldExtend', False), key=f"cold_{vname}")
+            with cols[2]:
+                new_dur = st.number_input(f"Duración {vname}", value=cdata['duracionBase'], min_value=1, max_value=52, key=f"dur_{vname}")
+                cdata['duracionBase'] = new_dur
+            with cols[3]:
+                if st.button(f"Eliminar {vname}", key=f"del_veg_{vname}"):
+                    del st.session_state.ciclos[vname]
+                    if vname in st.session_state.rendimientos:
+                        del st.session_state.rendimientos[vname]
+                    st.rerun()
+        
+        st.divider()
+        st.markdown("##### Agregar Nuevo Vegetal")
+        new_veg_name = st.text_input("Nombre del Vegetal")
+        if st.button("Crear Vegetal"):
+            if new_veg_name and new_veg_name not in st.session_state.ciclos:
+                st.session_state.ciclos[new_veg_name] = {"duracionBase": 12, "cosechas": [[11, 0.5], [12, 0.5]], "color": "ejote", "coldExtend": False}
+                st.session_state.rendimientos[new_veg_name] = {w: 8000 for w in range(1, 54)}
+                st.rerun()
 
-          var html = '<table class="grid"><thead><tr>';
-          html += '<th class="corner">Sem \\ Lote</th>';
-          html += '<th class="sumhead">Total Prod</th>';
-          
-          filteredLotes.forEach(function(l) {
-            html += '<th class="lotehead">' + l.nombre + '<div class="sub">' + l.area + 'h</div></th>';
-          });
-          html += '</tr></thead><tbody>';
+    with cat_tab2:
+        st.subheader("Administrar Fincas")
+        for f in st.session_state.fincas:
+            st.text(f"Finca: {f}")
+        new_finca = st.text_input("Código de Nueva Finca (ej. AB)")
+        if st.button("Agregar Finca"):
+            if new_finca and new_finca.upper() not in st.session_state.fincas:
+                st.session_state.fincas.append(new_finca.upper())
+                st.rerun()
 
-          YEARS.forEach(function(year) {
-            html += '<tr class="year-divider"><td colspan="' + (filteredLotes.length + 2) + '">AÑO ' + year + '</td></tr>';
-            for (var w = 1; w <= 52; w++) {
-              html += '<tr>';
-              html += '<td class="weekcell">S' + w + '</td>';
-              html += '<td class="sumcell">-</td>';
+    with cat_tab3:
+        st.subheader("Administrar Lotes Base")
+        st.info("Para dividir lotes en A/B, puedes gestionarlo directamente desde los controles de la matriz.")
+        lote_to_del = st.selectbox("Seleccionar Lote para Eliminar", [l['id'] for l in st.session_state.base_lotes])
+        if st.button("Eliminar Lote Seleccionado"):
+            st.session_state.base_lotes = [l for l in st.session_state.base_lotes if l['id'] != lote_to_del]
+            st.rerun()
 
-              filteredLotes.forEach(function(l) {
-                var pList = plantings[l.id] || [];
-                var matched = pList.find(function(p){ return p.year === year && p.weekInYear === w; });
-                var cssClass = matched ? ('cell ' + matched.vegetal) : 'cell';
-                var valStr = matched ? matched.vegetal.substring(0,3).toUpperCase() : '';
-                
-                if (selectedVeg && matched && matched.vegetal !== selectedVeg) {
-                  cssClass += ' dimmed';
-                }
+# ----------------- CONSTRUCCIÓN DE LA MATRIZ DE PLANIFICACIÓN -----------------
+active_lotes = get_active_lotes_for_finca(selected_finca)
 
-                html += '<td class="' + cssClass + '" data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">';
-                html += '<span class="cell-val">' + valStr + '</span>';
-                html += '</td>';
-              });
-              html += '</tr>';
+# Métricas superiores acumuladas
+total_area_uso = 0
+total_prod_acum = 0
+
+# Construir tabla de datos para Streamlit dataframe / data_editor o renderizado personalizado
+grid_data = []
+sum_col_header = f"Total {target_summary_veg}" if target_summary_veg else "Total Fincas"
+
+if not selected_years:
+    st.warning("Por favor seleccione al menos un año en las opciones superiores.")
+else:
+    table_rows = []
+    for year in selected_years:
+        for w in range(1, 53):
+            global_harvest = get_total_harvest_all_fincas(year, w, target_summary_veg)
+            row_dict = {
+                "Sem.": w,
+                "Año": year,
+                sum_col_header: round(global_harvest) if global_harvest > 0 else "-"
             }
-          });
-          html += '</tbody></table>';
+            
+            for l in active_lotes:
+                occupancy = get_detailed_occupancy(l['id'], year, w)
+                cell_text = ""
+                if occupancy:
+                    act = occupancy['planting']
+                    if target_lote_veg and act['vegetal'] != target_lote_veg:
+                        cell_text = ""
+                    else:
+                        if occupancy['type'] == 'direct':
+                            val = harvest_value(act, year, w, l['area'])
+                            if val > 0:
+                                cell_text = f"{act['vegetal']} ({round(val)})"
+                                total_prod_acum += val
+                            else:
+                                cell_text = f"[{act['vegetal']}]"
+                            if w == 1 or (act['year'] == year and act['weekInYear'] == w):
+                                total_area_uso += l['area']
+                        else:
+                            cell_text = f"[{occupancy['sourceId'][-2:]}]"
+                            if w == 1 or (act['year'] == year and act['weekInYear'] == w):
+                                total_area_uso += l['area']
+                row_dict[l['nombre']] = cell_text
+            table_rows.append(row_dict)
 
-          document.getElementById('gridWrap').innerHTML = html;
-          document.getElementById('statArea').innerText = (filteredLotes.length * 1.0).toFixed(1) + ' ha';
+    df_grid = pd.DataFrame(table_rows)
 
-          document.querySelectorAll('.grid td.cell').forEach(function(td) {
-            td.onclick = function() {
-              var lid = td.dataset.lote;
-              var yr = parseInt(td.dataset.year);
-              var wk = parseInt(td.dataset.week);
-              
-              if (!plantings[lid]) plantings[lid] = [];
-              var idx = plantings[lid].findIndex(function(p){ return p.year === yr && p.weekInYear === wk; });
-              
-              const vegList = ['Broccoli', 'Ejote', 'Grano', 'China', 'Dulce'];
-              if (idx >= 0) {
-                plantings[lid].splice(idx, 1);
-              } else {
-                plantings[lid].push({year: yr, weekInYear: wk, vegetal: vegList[Math.floor(Math.random() * vegList.length)]});
-              }
-              render();
-            };
-          });
-        }
+    # Mostrar métricas de resumen
+    mcol1, mcol2, mcol3 = st.columns(3)
+    with mcol1:
+        st.markdown(f'<div class="stat-card"><b>{round(total_area_uso, 1)}</b><span>Área Total en Uso (ha)</span></div>', unsafe_allow_html=True)
+    with mcol2:
+        st.markdown(f'<div class="stat-card"><b>{round(total_prod_acum):,}</b><span>Producción Total Estimada</span></div>', unsafe_allow_html=True)
+    with mcol3:
+        st.markdown(f'<div class="stat-card"><b>{selected_finca}</b><span>Finca Activa ({len(active_lotes)} lotes)</span></div>', unsafe_allow_html=True)
 
-        document.getElementById('vegFilter').onchange = function(e) {
-          selectedVeg = e.target.value;
-          render();
-        };
+    st.divider()
 
-        render();
-      }
-      if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
-    })();
-    </script>
-    </body>
-    </html>
-    """
+    # Controles rápidos de división/unificación de lotes por lote individual
+    st.markdown("##### 🎛 Control de Partición de Lotes (A / B)")
+    split_cols = st.columns(min(len(active_lotes), 6))
+    for idx, l in enumerate(active_lotes[:12]): # Mostrar primeros lotes para control rápido
+        base_id = l['parentId'] if l['isSplit'] else l['id']
+        with split_cols[idx % len(split_cols)]:
+            is_currently_split = st.session_state.expanded_lots.get(base_id, False)
+            btn_label = f"Unificar {base_id}" if is_currently_split else f"Partir {base_id}"
+            if st.button(btn_label, key=f"split_btn_{base_id}_{idx}"):
+                if is_currently_split:
+                    del st.session_state.expanded_lots[base_id]
+                else:
+                    st.session_state.expanded_lots[base_id] = True
+                st.rerun()
 
-  # Codificar el contenido HTML en Base64 para cargarlo de forma segura y moderna con components.iframe
-  b64_html = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
-  components.iframe(
-      f'data:text/html;base64,{b64_html}', height=850, scrolling=True
-  )
+    st.divider()
 
-elif menu_principal == '📂 Catálogo de Fincas y Lotes (Áreas Reales)':
-  st.subheader('🌱 Gestión de Catálogo de Fincas y Lotes con Áreas Reales')
-  st.markdown(
-      'Aquí puedes modificar las áreas reales de los lotes existentes o'
-      ' **agregar una nueva finca** con sus respectivos lotes.'
-  )
+    # Visualización interactiva de siembras y asignación rápida
+    st.markdown("##### 📅 Matriz Semanal de Siembras y Cosechas")
+    
+    # Selector interactivo para agregar o eliminar una siembra de forma sencilla
+    with st.expander("➕ Registrar o Modificar Siembra en Lote", expanded=False):
+        col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
+        with col_s1:
+            target_lote_input = st.selectbox("Lote", [l['id'] for l in active_lotes])
+        with col_s2:
+            target_veg_input = st.selectbox("Vegetal", list(st.session_state.ciclos.keys()))
+        with col_s3:
+            target_year_input = st.selectbox("Año Siembra", selected_years)
+        with col_s4:
+            target_week_input = st.number_input("Semana Siembra", min_value=1, max_value=52, value=1)
+        with col_s5:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Registrar Siembra"):
+                if target_lote_input not in st.session_state.plantings:
+                    st.session_state.plantings[target_lote_input] = []
+                st.session_state.plantings[target_lote_input].append({
+                    "year": target_year_input,
+                    "weekInYear": target_week_input,
+                    "vegetal": target_veg_input
+                })
+                st.success(f"Siembra de {target_veg_input} registrada en {target_lote_input} (Semana {target_week_input}/{target_year_input}).")
+                st.rerun()
 
-  finca_gestion = st.selectbox(
-      'Seleccionar Finca a Editar',
-      ['NP (Finca Principal 1-40)', 'CH', 'TM', 'PV', 'SM', '➕ Agregar Nueva Finca'],
-  )
-
-  if finca_gestion == '➕ Agregar Nueva Finca':
-    nueva_finca_nombre = st.text_input('Nombre de la Nueva Finca')
-    num_lotes_nuevo = st.number_input(
-        'Cantidad de Lotes', min_value=1, max_value=100, value=10
-    )
-    if st.button('Crear Finca'):
-      st.success(
-          f'¡Finca "{nueva_finca_nombre}" creada con {num_lotes_nuevo} lotes'
-          ' exitosamente!'
-      )
-  else:
-    finc_key = finca_gestion.split(' ')[0]
-    st.markdown(f'### Lotes de la Finca: {finc_key}')
-
-    num_lotes = 40 if finc_key == 'NP' else 20
-    prefix = finc_key
-
-    if f'lotes_{finc_key}' not in st.session_state:
-      st.session_state[f'lotes_{finc_key}'] = pd.DataFrame({
-          'Lote': [f'{prefix}-{i}' for i in range(1, num_lotes + 1)],
-          'Área Teórica (ha)': [1.0] * num_lotes,
-          'Área Real (ha)': [1.0] * num_lotes,
-      })
-
-    df_lotes_editado = st.data_editor(
-        st.session_state[f'lotes_{finc_key}'], key=f'editor_{finc_key}', hide_index=True
-    )
-    st.session_state[f'lotes_{finc_key}'] = df_lotes_editado
-
-elif menu_principal == '📊 Catálogo de Rendimientos y Vegetales (Siesa Plan)':
-  st.subheader('📈 Datos extraídos del archivo Siesa Plan.xlsx')
-
-  tab_r, tab_c = st.tabs(
-      ['Rendimientos Semanales', 'Curva de Producción por Vegetal']
-  )
-
-  with tab_r:
-    st.markdown('### Hoja: Rendimientos')
-    st.dataframe(df_rendimientos, use_container_width=True)
-
-  with tab_c:
-    st.markdown('### Hoja: Rendimiento por vegetal')
-    st.dataframe(df_curvas, use_container_width=True)
+    # Mostrar la tabla completa filtrada por años
+    st.dataframe(df_grid, use_container_width=True, height=500)
+```[cite: 3]
