@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.8",
+    page_title="Planificación de Siembras — V10.9",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -47,6 +47,7 @@ html_code = """
     --grano-bg: #fce4d6; --grano-fg: #833c00;
     --china-bg: #e4dfec; --china-fg: #5f3f7a;
     --dulce-bg: #fff2cc; --dulce-fg: #7f6000;
+    --inherited-bg: #fff3cd; --inherited-fg: #856404; --inherited-border: #ffeeba;
   }
   * { box-sizing: border-box; }
   html, body { margin:0; padding:0; background: var(--paper); color: var(--ink);
@@ -105,6 +106,7 @@ html_code = """
   td.cell { width:45px; min-width:45px; max-width:45px; height:24px; cursor:pointer; font-size:8.5px; position:relative; user-select:none; overflow:hidden; }
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; z-index:5; }
   td.cell.planted { font-weight:700; cursor:grab; }
+  td.cell.inherited-occupancy { background-color: var(--inherited-bg); color: var(--inherited-fg); font-style: italic; border: 1px dashed var(--inherited-border); }
   td.cell.long-gap { background-color: var(--gap-bg); }
   td.cell.dragover { outline:2px dashed var(--forest); outline-offset:-2px; background:#e2f0d9 !important; }
   td.cell.drag-error { outline:2px dashed var(--alert) !important; background:#fbeae8 !important; cursor:not-allowed !important; }
@@ -138,7 +140,7 @@ html_code = """
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Lotes Jerárquicos Unificados (V10.8)</h1>
+    <h1>Planificación de Siembras — Jerarquía y Alertas Visuales (V10.9)</h1>
   </header>
 
   <div class="toolbar">
@@ -283,7 +285,37 @@ html_code = """
         return null;
       }
 
-      // Validación unificada entre Lote Principal y Sub-lotes (A y B)
+      // Revisa si hay ocupación directa o heredada por los sub-lotes / lote principal
+      function getDetailedOccupancy(loteId, year, weekInYear) {
+        // 1. Revisión directa
+        var direct = findActive(loteId, year, weekInYear);
+        if (direct) {
+          return { planting: direct, type: 'direct', sourceId: loteId };
+        }
+
+        // 2. Si es un lote principal colapsado, revisar si A o B tienen siembras activas
+        if (!loteId.endsWith('A') && !loteId.endsWith('B')) {
+          var subA = findActive(loteId + 'A', year, weekInYear);
+          if (subA) return { planting: subA, type: 'inherited', sourceId: loteId + 'A' };
+          var subB = findActive(loteId + 'B', year, weekInYear);
+          if (subB) return { planting: subB, type: 'inherited', sourceId: loteId + 'B' };
+        }
+
+        // 3. Si es un sub-lote (A o B), revisar si el padre o el hermano están ocupados
+        if (loteId.endsWith('A') || loteId.endsWith('B')) {
+          var baseId = loteId.slice(0, -1);
+          var siblingId = loteId.endsWith('A') ? baseId + 'B' : baseId + 'A';
+          
+          var parentAct = findActive(baseId, year, weekInYear);
+          if (parentAct) return { planting: parentAct, type: 'inherited', sourceId: baseId };
+
+          var siblingAct = findActive(siblingId, year, weekInYear);
+          if (siblingAct) return { planting: siblingAct, type: 'inherited', sourceId: siblingId };
+        }
+
+        return null;
+      }
+
       function canPlant(loteId, year, weekInYear, vegName, ignorePlanting) {
         var cycle = CICLOS[vegName];
         if (!cycle) return false;
@@ -291,7 +323,6 @@ html_code = """
         var startAbs = absWeek(year, weekInYear);
         var endAbs = startAbs + cycle.duracion - 1;
 
-        // Determinar qué IDs evaluar según la jerarquía
         var relatedIds = [];
         if (loteId.endsWith('A') || loteId.endsWith('B')) {
           var baseId = loteId.slice(0, -1);
@@ -311,7 +342,7 @@ html_code = """
             var existingEnd = existingStart + CICLOS[p.vegetal].duracion - 1;
 
             if (startAbs <= existingEnd && endAbs >= existingStart) {
-              return false; // Conflicto de fechas en la familia del lote
+              return false;
             }
           }
         }
@@ -402,33 +433,42 @@ html_code = """
               tableHtml += '<tr><td class="weekcell">' + w + '</td><td class="sumcell">' + globalHarvestTxt + '</td>';
 
               activeLotes.forEach(function(l) {
-                var act = findActive(l.id, year, w);
+                var occupancy = getDetailedOccupancy(l.id, year, w);
                 var cellStyle = '';
                 var text = '';
                 var isHiddenByLoteFilter = false;
                 var cellClasses = ['cell'];
 
-                if (act) {
+                if (occupancy) {
+                  var act = occupancy.planting;
                   if (selectedLoteVeg && act.vegetal !== selectedLoteVeg) {
                     isHiddenByLoteFilter = true;
                   } else {
-                    cellStyle = getVegetableStyle(act.vegetal);
-                    cellClasses.push('planted');
-                    if (act.year === year && act.weekInYear === w) {
-                      text = act.vegetal;
+                    if (occupancy.type === 'direct') {
+                      cellStyle = getVegetableStyle(act.vegetal);
+                      cellClasses.push('planted');
+                      if (act.year === year && act.weekInYear === w) {
+                        text = act.vegetal;
+                      }
+                      var val = harvestValue(act, year, w, l.area);
+                      if (val > 0) {
+                        text = Math.round(val);
+                        prodTotal += val;
+                      }
+                      if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
+                    } else {
+                      // Ocupación heredada por un sub-lote o hermano
+                      cellClasses.push('inherited-occupancy');
+                      text = '[' + occupancy.sourceId.slice(-2) + ']';
+                      if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
                     }
-                    
-                    var val = harvestValue(act, year, w, l.area);
-                    if (val > 0) {
-                      text = Math.round(val);
-                      prodTotal += val;
-                    }
-                    if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
                   }
                 }
 
+                var isDraggable = occupancy && occupancy.type === 'direct' && occupancy.planting.year === year && occupancy.planting.weekInYear === w;
+
                 tableHtml += '<td class="' + cellClasses.join(' ') + '" style="' + cellStyle + '" ' +
-                  'draggable="' + (act && act.year === year && act.weekInYear === w ? 'true' : 'false') + '" ' +
+                  'draggable="' + (isDraggable ? 'true' : 'false') + '" ' +
                   'data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">' +
                   (isHiddenByLoteFilter ? '' : '<span class="cell-val">' + text + '</span>') +
                 '</td>';
@@ -472,7 +512,8 @@ html_code = """
             var loteId = cell.dataset.lote;
             var yr = parseInt(cell.dataset.year);
             var wk = parseInt(cell.dataset.week);
-            var act = findActive(loteId, yr, wk);
+            var occupancy = getDetailedOccupancy(loteId, yr, wk);
+            var act = occupancy ? occupancy.planting : null;
 
             var pop = document.createElement('div');
             pop.className = 'popup';
@@ -494,34 +535,41 @@ html_code = """
             pop.style.left = left + 'px';
             pop.style.top = top + 'px';
 
-            if (act) {
-              var btnDel = document.createElement('button');
-              btnDel.className = 'danger';
-              btnDel.textContent = '❌ Eliminar ' + act.vegetal;
-              btnDel.onclick = function() {
-                plantings[loteId] = (plantings[loteId] || []).filter(function(p){ return p !== act; });
-                render();
-              };
-              pop.appendChild(btnDel);
+            if (occupancy) {
+              if (occupancy.type === 'direct') {
+                var btnDel = document.createElement('button');
+                btnDel.className = 'danger';
+                btnDel.textContent = '❌ Eliminar ' + act.vegetal;
+                btnDel.onclick = function() {
+                  plantings[loteId] = (plantings[loteId] || []).filter(function(p){ return p !== act; });
+                  render();
+                };
+                pop.appendChild(btnDel);
+              } else {
+                var msgInherited = document.createElement('div');
+                msgInherited.className = 'msg-occupied';
+                msgInherited.textContent = 'Bloqueado por ' + occupancy.sourceId + ' (' + act.vegetal + ')';
+                pop.appendChild(msgInherited);
+              }
 
               if (act.year !== yr || act.weekInYear !== wk) {
                 var msg = document.createElement('div');
                 msg.className = 'msg-occupied';
-                msg.textContent = 'Espacio ocupado por ' + act.vegetal;
+                msg.textContent = 'Ciclo activo en curso';
                 pop.appendChild(msg);
               }
             }
 
             VEG_ORDER.forEach(function(v) {
-              var isStartWeek = act && act.year === yr && act.weekInYear === wk;
+              var isStartWeek = act && occupancy.type === 'direct' && act.year === yr && act.weekInYear === wk;
               var isAllowed = canPlant(loteId, yr, wk, v, isStartWeek ? act : null);
 
               var btn = document.createElement('button');
               btn.textContent = (isStartWeek ? 'Cambiar a ' : '🌱 ') + v;
               btn.disabled = !isAllowed;
 
-              if (!isAllowed && (!act || !isStartWeek)) {
-                btn.title = "Conflicto: El lote completo o sus sub-lotes ya están ocupados en este periodo";
+              if (!isAllowed) {
+                btn.title = "Conflicto: El lote o sus sub-lotes están ocupados";
               }
 
               btn.onclick = function() {
@@ -545,10 +593,10 @@ html_code = """
             var loteId = cell.dataset.lote;
             var yr = parseInt(cell.dataset.year);
             var wk = parseInt(cell.dataset.week);
-            var act = findActive(loteId, yr, wk);
+            var occupancy = getDetailedOccupancy(loteId, yr, wk);
             
-            if (act && act.year === yr && act.weekInYear === wk) {
-              dragSource = { loteId: loteId, planting: act };
+            if (occupancy && occupancy.type === 'direct' && occupancy.planting.year === yr && occupancy.planting.weekInYear === wk) {
+              dragSource = { loteId: loteId, planting: occupancy.planting };
               e.dataTransfer.setData('text/plain', '');
             } else {
               e.preventDefault();
