@@ -1,6 +1,8 @@
+import base64
 import os
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title='Cropplaner - Sistema Integral y Catálogos',
@@ -235,12 +237,11 @@ if menu_principal == '🌱 Cropplaner Principal (V11.0)':
     </html>
     """
 
-  # Guardar temporalmente el HTML para servirlo de forma moderna y limpia con st.iframe
-  html_file_path = 'cropplaner_temp.html'
-  with open(html_file_path, 'w', encoding='utf-8') as f:
-    f.write(html_content)
-
-  st.iframe(html_file_path, height=850, scrolling=True)
+  # Codificar el contenido HTML en Base64 para cargarlo de forma segura y moderna con components.iframe
+  b64_html = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+  components.iframe(
+      f'data:text/html;base64,{b64_html}', height=850, scrolling=True
+  )
 
 elif menu_principal == '📂 Catálogo de Fincas y Lotes (Áreas Reales)':
   st.subheader('🌱 Gestión de Catálogo de Fincas y Lotes con Áreas Reales')
