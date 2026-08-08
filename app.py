@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.3",
+    page_title="Planificación de Siembras — V10.4",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -39,6 +39,7 @@ html_code = """
     --forest: #1f4e3d;
     --muted: #6b7268;
     --alert: #b3261e;
+    --gap-bg: #fdf2f2; /* Color rojo pálido para espacios libres largos (>4 semanas) */
     --ejote-bg: #ddebf7; --ejote-fg: #1f4e79;
     --broccoli-bg: #e2efda; --broccoli-fg: #375623;
     --grano-bg: #fce4d6; --grano-fg: #833c00;
@@ -97,6 +98,7 @@ html_code = """
   td.cell { width:45px; min-width:45px; max-width:45px; height:24px; cursor:pointer; font-size:8.5px; position:relative; user-select:none; overflow:hidden; }
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; z-index:5; }
   td.cell.planted { font-weight:700; cursor:grab; }
+  td.cell.long-gap { background-color: var(--gap-bg); }
   td.cell.dragover { outline:2px dashed var(--forest); outline-offset:-2px; background:#e2f0d9 !important; }
   td.cell.drag-error { outline:2px dashed var(--alert) !important; background:#fbeae8 !important; cursor:not-allowed !important; }
 
@@ -128,7 +130,7 @@ html_code = """
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Sin Traslape de Cultivos</h1>
+    <h1>Planificación de Siembras — Alerta de Espacios Libres (>4 sem)</h1>
   </header>
 
   <div class="toolbar">
@@ -247,7 +249,6 @@ html_code = """
         return null;
       }
 
-      /* Función clave: Verifica si colocar un vegetal en (year, weekInYear) entra en conflicto con siembras previas o futuras */
       function canPlant(loteId, year, weekInYear, vegName, ignorePlanting) {
         var cycle = CICLOS[vegName];
         if (!cycle) return false;
@@ -263,12 +264,41 @@ html_code = """
           var existingStart = absWeek(p.year, p.weekInYear);
           var existingEnd = existingStart + CICLOS[p.vegetal].duracion - 1;
 
-          // Conflicto de traslape entre intervalos [startAbs, endAbs] y [existingStart, existingEnd]
           if (startAbs <= existingEnd && endAbs >= existingStart) {
             return false;
           }
         }
         return true;
+      }
+
+      /* Función que calcula si una semana libre pertenece a un lapso sin sembrar mayor a 4 semanas */
+      function isLongGapWeek(loteId, year, weekInYear) {
+        var list = plantings[loteId] || [];
+        if (list.length === 0) return false;
+
+        // Ordenar las siembras cronológicamente
+        var sorted = list.slice().sort(function(a, b) {
+          return absWeek(a.year, a.weekInYear) - absWeek(b.year, b.weekInYear);
+        });
+
+        var currentAbs = absWeek(year, weekInYear);
+
+        // Verificar si la celda actual está vacía
+        if (findActive(loteId, year, weekInYear)) return false;
+
+        // Buscar si está entre la siembra i y la siembra i+1
+        for (var i = 0; i < sorted.length - 1; i++) {
+          var p1 = sorted[i];
+          var p2 = sorted[i+1];
+          var end1 = absWeek(p1.year, p1.weekInYear) + CICLOS[p1.vegetal].duracion - 1;
+          var start2 = absWeek(p2.year, p2.weekInYear);
+
+          if (currentAbs > end1 && currentAbs < start2) {
+            var gapSize = start2 - end1 - 1; // Semanas puramente libres
+            if (gapSize > 4) return true;
+          }
+        }
+        return false;
       }
 
       function harvestValue(planting, year, weekInYear, area){
@@ -349,12 +379,14 @@ html_code = """
                 var cellStyle = '';
                 var text = '';
                 var isHiddenByLoteFilter = false;
+                var cellClasses = ['cell'];
 
                 if (act) {
                   if (selectedLoteVeg && act.vegetal !== selectedLoteVeg) {
                     isHiddenByLoteFilter = true;
                   } else {
                     cellStyle = getVegetableStyle(act.vegetal);
+                    cellClasses.push('planted');
                     if (act.year === year && act.weekInYear === w) {
                       text = act.vegetal;
                     }
@@ -366,9 +398,13 @@ html_code = """
                     }
                     if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
                   }
+                } else {
+                  if (isLongGapWeek(l.id, year, w)) {
+                    cellClasses.push('long-gap');
+                  }
                 }
 
-                tableHtml += '<td class="cell ' + (act && !isHiddenByLoteFilter ? 'planted' : '') + '" style="' + cellStyle + '" ' +
+                tableHtml += '<td class="' + cellClasses.join(' ') + '" style="' + cellStyle + '" ' +
                   'draggable="' + (act && act.year === year && act.weekInYear === w ? 'true' : 'false') + '" ' +
                   'data-lote="' + l.id + '" data-year="' + year + '" data-week="' + w + '">' +
                   (isHiddenByLoteFilter ? '' : '<span class="cell-val">' + text + '</span>') +
@@ -432,7 +468,6 @@ html_code = """
               };
               pop.appendChild(btnDel);
 
-              // Si hizo clic en medio del ciclo pero no en la semana exacta de inicio
               if (act.year !== yr || act.weekInYear !== wk) {
                 var msg = document.createElement('div');
                 msg.className = 'msg-occupied';
@@ -476,7 +511,6 @@ html_code = """
             var wk = parseInt(cell.dataset.week);
             var act = findActive(loteId, yr, wk);
             
-            // Solo se permite arrastrar desde la celda de inicio del cultivo
             if (act && act.year === yr && act.weekInYear === wk) {
               dragSource = { loteId: loteId, planting: act };
               e.dataTransfer.setData('text/plain', '');
@@ -522,7 +556,6 @@ html_code = """
             var isValid = canPlant(targetLote, targetYr, targetWk, dragSource.planting.vegetal, dragSource.planting);
 
             if (isValid) {
-              // Mover a nuevo lote y/o fecha
               if (dragSource.loteId !== targetLote) {
                 plantings[dragSource.loteId] = (plantings[dragSource.loteId] || []).filter(function(p){ return p !== dragSource.planting; });
                 if (!plantings[targetLote]) plantings[targetLote] = [];
