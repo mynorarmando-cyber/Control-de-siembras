@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — Prototipo V4",
+    page_title="Planificación de Siembras — Prototipo V5",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -85,13 +85,16 @@ html_code = """
   table.grid { border-collapse:collapse; table-layout:fixed; }
   table.grid th, table.grid td { border:1px solid #ece9de; text-align:center; }
   
-  th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:100px; min-width:100px; height:50px; }
+  th.corner { position:sticky; top:0; left:0; z-index:10; background:#e8e5d8; width:60px; min-width:60px; height:50px; }
+  th.sumhead { position:sticky; top:0; left:60px; z-index:10; background:#d5e1df; color:var(--forest); width:110px; min-width:110px; font-size:11px; font-weight:700; border-right:2px solid var(--forest); }
   th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:80px; min-width:80px;
     font-weight:600; font-size:11px; padding:4px 2px; }
   th.lotehead .sub { font-size:9.5px; font-weight:normal; color:var(--muted); }
   
-  td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:100px; min-width:100px;
-    font-weight:600; font-size:11px; height:26px; border-right:2px solid #c9c4b2; }
+  td.weekcell { position:sticky; left:0; z-index:7; background:#f0efe8; width:60px; min-width:60px;
+    font-weight:600; font-size:12px; height:26px; }
+  td.sumcell { position:sticky; left:60px; z-index:7; background:#eef4f2; width:110px; min-width:110px;
+    font-weight:700; font-size:11px; height:26px; border-right:2px solid var(--forest); color:var(--forest); }
   
   td.cell { width:80px; height:26px; cursor:pointer; font-size:10px; position:relative; }
   td.cell:hover { outline:1.5px solid var(--forest); outline-offset:-1px; }
@@ -125,7 +128,7 @@ html_code = """
 
   <div class="toolbar">
     <div class="tabs" id="fincaTabs"></div>
-    <div class="field">Vegetal:
+    <div class="field">Filtrar Vegetal:
       <select id="vegFilter"><option value="">Todos</option></select>
     </div>
     <div class="field">Horizonte:
@@ -178,8 +181,10 @@ function initLotes() {
 initLotes();
 
 const plantings = {};
-plantings['NP-1'] = [{start: 1, vegetal: 'Ejote'}, {start: 48, vegetal: 'Broccoli'}];
-plantings['NP-2'] = [{start: 5, vegetal: 'Grano'}];
+plantings['NP-1'] = [{start: 1, vegetal: 'China'}, {start: 48, vegetal: 'Broccoli'}];
+plantings['CH-1'] = [{start: 1, vegetal: 'China'}];
+plantings['TM-1'] = [{start: 2, vegetal: 'China'}];
+plantings['PV-1'] = [{start: 1, vegetal: 'China'}];
 
 let dragSource = null;
 
@@ -207,6 +212,19 @@ function harvestValue(planting, week, area){
   const rel = week - planting.start + 1;
   const cosecha = c.cosechas.find(([w])=>w===rel);
   return cosecha ? area * c.rendimiento * cosecha[1] : 0;
+}
+
+function getTotalHarvestAllFincas(week, targetVeg) {
+  let sum = 0;
+  LOTES.forEach(l => {
+    const list = plantings[l.id] || [];
+    list.forEach(p => {
+      if (!targetVeg || p.vegetal === targetVeg) {
+        sum += harvestValue(p, week, l.area);
+      }
+    });
+  });
+  return sum;
 }
 
 let currentFinca = 'NP';
@@ -326,16 +344,24 @@ function render(){
   let areaUsoTotal = 0;
   let prodTotal = 0;
 
-  let tableHtml = `<table class="grid"><thead><tr><th class="corner">Semana / Año</th>`;
+  const sumColHeader = selectedVegFilter ? `Total ${selectedVegFilter}` : 'Total Todas Fincas';
+
+  let tableHtml = `<table class="grid"><thead><tr>
+    <th class="corner">Semana</th>
+    <th class="sumhead">${sumColHeader}</th>`;
+  
   activeLotes.forEach(l => {
     tableHtml += `<th class="lotehead">${l.nombre}<div class="sub">${l.area} ha</div></th>`;
   });
   tableHtml += `</tr></thead><tbody>`;
 
   for (let w = 1; w <= totalWeeks; w++) {
-    const yearNum = Math.ceil(w / 52);
-    const weekInYear = ((w - 1) % 52) + 1;
-    tableHtml += `<tr><td class="weekcell">Sem ${w} <span style="font-size:9px;color:#777;">(A${yearNum}-W${weekInYear})</span></td>`;
+    const globalHarvest = getTotalHarvestAllFincas(w, selectedVegFilter);
+    const globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
+
+    tableHtml += `<tr>
+      <td class="weekcell">${w}</td>
+      <td class="sumcell">${globalHarvestTxt}</td>`;
 
     activeLotes.forEach(l => {
       const act = findActive(l.id, w);
