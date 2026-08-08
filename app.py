@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.7",
+    page_title="Planificación de Siembras — V10.8",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -138,7 +138,7 @@ html_code = """
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Lotes Flexibles (Completos y Partidos)</h1>
+    <h1>Planificación de Siembras — Lotes Jerárquicos Unificados (V10.8)</h1>
   </header>
 
   <div class="toolbar">
@@ -227,7 +227,7 @@ html_code = """
         }
       });
 
-      var expandedLots = {}; // Controla qué lotes base muestran sus sub-lotes A y B
+      var expandedLots = {};
       var plantings = {};
       plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}];
       plantings['NP-1A'] = [{year: 2026, weekInYear: 20, vegetal: 'Ejote'}];
@@ -283,6 +283,7 @@ html_code = """
         return null;
       }
 
+      // Validación unificada entre Lote Principal y Sub-lotes (A y B)
       function canPlant(loteId, year, weekInYear, vegName, ignorePlanting) {
         var cycle = CICLOS[vegName];
         if (!cycle) return false;
@@ -290,16 +291,28 @@ html_code = """
         var startAbs = absWeek(year, weekInYear);
         var endAbs = startAbs + cycle.duracion - 1;
 
-        var list = plantings[loteId] || [];
-        for (var i = 0; i < list.length; i++) {
-          var p = list[i];
-          if (ignorePlanting && p === ignorePlanting) continue;
+        // Determinar qué IDs evaluar según la jerarquía
+        var relatedIds = [];
+        if (loteId.endsWith('A') || loteId.endsWith('B')) {
+          var baseId = loteId.slice(0, -1);
+          relatedIds = [baseId, baseId + 'A', baseId + 'B'];
+        } else {
+          relatedIds = [loteId, loteId + 'A', loteId + 'B'];
+        }
 
-          var existingStart = absWeek(p.year, p.weekInYear);
-          var existingEnd = existingStart + CICLOS[p.vegetal].duracion - 1;
+        for (var r = 0; r < relatedIds.length; r++) {
+          var checkId = relatedIds[r];
+          var list = plantings[checkId] || [];
+          for (var i = 0; i < list.length; i++) {
+            var p = list[i];
+            if (ignorePlanting && p === ignorePlanting && checkId === loteId) continue;
 
-          if (startAbs <= existingEnd && endAbs >= existingStart) {
-            return false;
+            var existingStart = absWeek(p.year, p.weekInYear);
+            var existingEnd = existingStart + CICLOS[p.vegetal].duracion - 1;
+
+            if (startAbs <= existingEnd && endAbs >= existingStart) {
+              return false; // Conflicto de fechas en la familia del lote
+            }
           }
         }
         return true;
@@ -365,7 +378,6 @@ html_code = """
         activeLotes.forEach(function(l) {
           var splitClass = l.isSplit ? ' is-split' : '';
           var baseId = l.isSplit ? l.parentId : l.id;
-          var toggleIcon = l.isSplit ? '▼' : '▶';
           
           tableHtml += '<th class="lotehead' + splitClass + '" data-lotid="' + l.id + '">' + 
             l.nombre + 
@@ -507,6 +519,10 @@ html_code = """
               var btn = document.createElement('button');
               btn.textContent = (isStartWeek ? 'Cambiar a ' : '🌱 ') + v;
               btn.disabled = !isAllowed;
+
+              if (!isAllowed && (!act || !isStartWeek)) {
+                btn.title = "Conflicto: El lote completo o sus sub-lotes ya están ocupados en este periodo";
+              }
 
               btn.onclick = function() {
                 if (!isAllowed) return;
