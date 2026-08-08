@@ -194,7 +194,6 @@ html_code = """
       var AVAILABLE_YEARS = [2025, 2026, 2027, 2028];
       var selectedYears = [2026, 2027];
 
-      // Curvas de rendimiento semanal reales por vegetal (basadas en Siesa Plan.xlsx)
       var RENDIMIENTOS_SEMANALES = {
         Ejote: {
           1:10900, 2:10900, 3:10900, 4:10900, 5:10900, 6:10900, 7:10900, 8:10900, 9:10900,
@@ -273,19 +272,17 @@ html_code = """
         return (year - 2020) * 52 + weekInYear;
       }
 
-      // Evaluar si una semana cae en época fría (Semanas >= 45 o <= 8 por defecto, ajustable)
       function isColdSeason(weekInYear) {
         return (weekInYear >= 45 || weekInYear <= 8);
       }
 
-      // Duración dinámica para el Ejote (si la siembra o cosecha cae en época fría, se alarga 1 semana más)
       function getCycleDuration(vegetal, startYear, startWeek) {
         var base = CICLOS[vegetal].duracionBase;
         if (vegetal === 'Ejote') {
           var endWeekApprox = startWeek + base - 1;
           var normEndWeek = ((endWeekApprox - 1) % 52) + 1;
           if (isColdSeason(startWeek) || isColdSeason(normEndWeek)) {
-            return base + 1; // Se alarga 1 semana en época fría
+            return base + 1;
           }
         }
         return base;
@@ -470,7 +467,6 @@ html_code = """
 
         var factorPorcentaje = cosecha[1];
         
-        // Obtener la semana del año calendario real en la que ocurre esta cosecha específica
         var calendarWeek = ((weekInYear - 1) % 52) + 1;
         var vegRendDict = RENDIMIENTOS_SEMANALES[planting.vegetal];
         var rendimientoSemanalBase = vegRendDict ? (vegRendDict[calendarWeek] || 8000) : 8000;
@@ -514,6 +510,38 @@ html_code = """
             render();
           };
         });
+
+        if (summarySelect && summarySelect.options.length <= 1) {
+          VEG_ORDER.forEach(function(v) {
+            var opt1 = document.createElement('option');
+            opt1.value = v; opt1.textContent = v;
+            summarySelect.appendChild(opt1);
+            var opt2 = document.createElement('option');
+            opt2.value = v; opt2.textContent = v;
+            if (loteSelect) loteSelect.appendChild(opt2);
+          });
+          summarySelect.onchange = render;
+          if (loteSelect) loteSelect.onchange = render;
+        }
+
+        var yearContainer = document.getElementById('yearCheckboxes');
+        if (yearContainer && yearContainer.innerHTML === '') {
+          yearContainer.innerHTML = AVAILABLE_YEARS.map(function(y) {
+            var checked = selectedYears.indexOf(y) !== -1 ? 'checked' : '';
+            return '<label><input type="checkbox" value="' + y + '" ' + checked + '> ' + y + '</label>';
+          }).join('');
+          yearContainer.querySelectorAll('input').forEach(function(chk) {
+            chk.onchange = function() {
+              var yr = parseInt(chk.value);
+              if (chk.checked) {
+                if (selectedYears.indexOf(yr) === -1) selectedYears.push(yr);
+              } else {
+                selectedYears = selectedYears.filter(function(y){ return y !== yr; });
+              }
+              render();
+            };
+          });
+        }
 
         var activeLotes = getActiveLotesForFinca(currentFinca);
         var wrap = document.getElementById('gridWrap');
@@ -746,7 +774,7 @@ html_code = """
             }
           };
 
-          cell.ondragleave = function() {
+          cell.ondragleave = function(e) {
             cell.classList.remove('dragover');
             cell.classList.remove('drag-error');
           };
@@ -755,6 +783,7 @@ html_code = """
             e.preventDefault();
             cell.classList.remove('dragover');
             cell.classList.remove('drag-error');
+
             if (!dragSource) return;
 
             var targetLote = cell.dataset.lote;
@@ -764,65 +793,29 @@ html_code = """
             var isValid = canPlant(targetLote, targetYr, targetWk, dragSource.planting.vegetal, dragSource.planting);
 
             if (isValid) {
-              if (dragSource.planting.vegetal === 'Broccoli' && isBroccoliAfterBroccoli(targetLote, targetYr, targetWk, dragSource.planting)) {
-                var proceed = window.confirm("Advertencia: No es recomendado sembrar brócoli inmediatamente después de otro brócoli en este espacio. ¿Desea continuar de todos modos?");
-                if (!proceed) return;
-              }
-
-              if (dragSource.loteId !== targetLote) {
-                plantings[dragSource.loteId] = (plantings[dragSource.loteId] || []).filter(function(p){ return p !== dragSource.planting; });
-                if (!plantings[targetLote]) plantings[targetLote] = [];
-                plantings[targetLote].push(dragSource.planting);
-              }
-
+              plantings[dragSource.loteId] = (plantings[dragSource.loteId] || []).filter(function(p){ return p !== dragSource.planting; });
+              
               dragSource.planting.year = targetYr;
               dragSource.planting.weekInYear = targetWk;
-            }
+              if (!plantings[targetLote]) plantings[targetLote] = [];
+              plantings[targetLote].push(dragSource.planting);
 
-            dragSource = null;
-            render();
+              dragSource = null;
+              render();
+            }
           };
         });
       }
 
-      document.body.onclick = function(e) {
-        if (activePopup && !activePopup.contains(e.target)) {
-          closePopup();
-        }
-      };
-
-      document.getElementById('gridWrap').onscroll = function() {
+      window.onclick = function(e) {
         closePopup();
       };
 
-      var optionsVegSummary = '<option value="">Todos</option>' + 
-        VEG_ORDER.map(function(v){ return '<option value="' + v + '">' + v + '</option>'; }).join('');
-      
-      var optionsVegLote = '<option value="">Ver Todos</option>' + 
-        VEG_ORDER.map(function(v){ return '<option value="' + v + '">' + v + '</option>'; }).join('');
-
-      document.getElementById('summaryVegFilter').innerHTML = optionsVegSummary;
-      document.getElementById('loteVegFilter').innerHTML = optionsVegLote;
-
-      document.getElementById('summaryVegFilter').onchange = render;
-      document.getElementById('loteVegFilter').onchange = render;
-
-      var container = document.getElementById('yearCheckboxes');
-      container.innerHTML = AVAILABLE_YEARS.map(function(yr) {
-        var isChecked = selectedYears.indexOf(yr) !== -1 ? 'checked' : '';
-        return '<label><input type="checkbox" value="' + yr + '" ' + isChecked + '> ' + yr + '</label>';
-      }).join('');
-
-      container.querySelectorAll('input').forEach(function(chk) {
-        chk.onchange = function() {
-          selectedYears = Array.from(container.querySelectorAll('input:checked')).map(function(i){ return parseInt(i.value); }).sort();
-          render();
-        };
-      });
-
       render();
-    } catch (err) {
-      document.getElementById('gridWrap').innerHTML = '<div style="color:red; padding:20px;"><b>Error de JavaScript:</b><br>' + err.message + '</div>';
+
+    } catch(err) {
+      document.body.innerHTML = '<div style="padding:20px; color:red; font-family:sans-serif;"><h3>Error al inicializar la aplicación:</h3><pre>' + err.stack + '</pre></div>';
+      console.error(err);
     }
   }
 
@@ -837,4 +830,4 @@ html_code = """
 </html>
 """
 
-components.html(html_code, height=900, scrolling=True)
+components.html(html_code, height=750, scrolling=True)
