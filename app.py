@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.4",
+    page_title="Planificación de Siembras — V10.5",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -39,7 +39,7 @@ html_code = """
     --forest: #1f4e3d;
     --muted: #6b7268;
     --alert: #b3261e;
-    --gap-bg: #fdf2f2; /* Color rojo pálido para espacios libres largos (>4 semanas) */
+    --gap-bg: #fdf2f2;
     --ejote-bg: #ddebf7; --ejote-fg: #1f4e79;
     --broccoli-bg: #e2efda; --broccoli-fg: #375623;
     --grano-bg: #fce4d6; --grano-fg: #833c00;
@@ -87,7 +87,8 @@ html_code = """
   th.sumhead { position:sticky; top:0; left:50px; z-index:10; background:#cbe0d7; color:var(--forest); width:95px; min-width:95px; font-size:10px; font-weight:700; border-right:2px solid var(--forest); }
   
   th.lotehead { position:sticky; top:0; z-index:8; background:#f0efe8; width:45px; min-width:45px; max-width:45px;
-    font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; }
+    font-weight:700; font-size:10px; padding:2px 1px; overflow:hidden; cursor:pointer; }
+  th.lotehead:hover { background:#e2e0d5; }
   th.lotehead .sub { font-size:8.5px; font-weight:normal; color:var(--muted); }
   
   tr.year-divider td { background: var(--forest) !important; color:#fff !important; font-weight:700; font-size:11px; text-align:left; padding:3px 8px; position:sticky; left:0; z-index:9; }
@@ -112,7 +113,7 @@ html_code = """
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.22); 
     padding: 6px; 
-    width: 160px;
+    width: 170px;
     animation: fadeIn 0.1s ease-out;
   }
   @keyframes fadeIn {
@@ -124,13 +125,14 @@ html_code = """
   .popup button:hover:not(:disabled) { background:#e8f0ec; color: var(--forest); }
   .popup button:disabled { opacity: 0.4; cursor: not-allowed; }
   .popup .danger { color: var(--alert); font-weight:700; border-bottom:1px solid var(--line); margin-bottom:4px; padding-bottom:4px; }
+  .popup .action-btn { color: var(--forest); font-weight:700; border-top:1px solid var(--line); margin-top:4px; padding-top:4px; }
   .popup .msg-occupied { font-size: 10px; color: var(--alert); padding: 4px 6px; font-weight: 600; text-align: center; background: #fbeae8; border-radius: 4px; margin-bottom: 4px; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — Alerta de Espacios Libres (>4 sem)</h1>
+    <h1>Planificación de Siembras — Partición y Gestión de Lotes</h1>
   </header>
 
   <div class="toolbar">
@@ -204,12 +206,12 @@ html_code = """
       var VEG_ORDER = Object.keys(CICLOS);
       var FINCAS = ['NP','CH','TM','PV','SM'];
 
-      var LOTES = [];
+      var BASE_LOTES = [];
       var areaSeed = [1.0, 1.2, 0.8, 1.5, 1.1, 0.9, 1.3, 1.4];
       var idCounter = 1;
       FINCAS.forEach(function(f) {
         for (var i = 1; i <= 30; i++) {
-          LOTES.push({
+          BASE_LOTES.push({
             id: f + '-' + i,
             finca: f,
             nombre: f + '-' + i,
@@ -218,6 +220,9 @@ html_code = """
           idCounter++;
         }
       });
+
+      // Registro de particiones activas: { 'NP-1': { parentId: 'NP-1', subA: {id:'NP-1A', area:0.5}, subB: {id:'NP-1B', area:0.5} } }
+      var partitions = {};
 
       var plantings = {};
       plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}, {year: 2026, weekInYear: 20, vegetal: 'Broccoli'}];
@@ -234,6 +239,31 @@ html_code = """
 
       function absWeek(year, weekInYear) {
         return (year - 2020) * 52 + weekInYear;
+      }
+
+      // Obtiene la lista actual de lotes desplegados considerando particiones
+      function getActiveLotesForFinca(fincaName) {
+        var result = [];
+        var fincaBase = BASE_LOTES.filter(function(l) { return l.finca === fincaName; });
+        
+        fincaBase.forEach(function(l) {
+          if (partitions[l.id]) {
+            var p = partitions[l.id];
+            result.push({ id: p.subA.id, finca: fincaName, nombre: p.subA.id, area: p.subA.area, parentId: l.id });
+            result.push({ id: p.subB.id, finca: fincaName, nombre: p.subB.id, area: p.subB.area, parentId: l.id });
+          } else {
+            result.push({ id: l.id, finca: fincaName, nombre: l.nombre, area: l.area, parentId: null });
+          }
+        });
+        return result;
+      }
+
+      function getAllActiveLotesFlat() {
+        var all = [];
+        FINCAS.forEach(function(f) {
+          all = all.concat(getActiveLotesForFinca(f));
+        });
+        return all;
       }
 
       function findActive(loteId, year, weekInYear){
@@ -271,22 +301,17 @@ html_code = """
         return true;
       }
 
-      /* Función que calcula si una semana libre pertenece a un lapso sin sembrar mayor a 4 semanas */
       function isLongGapWeek(loteId, year, weekInYear) {
         var list = plantings[loteId] || [];
         if (list.length === 0) return false;
 
-        // Ordenar las siembras cronológicamente
         var sorted = list.slice().sort(function(a, b) {
           return absWeek(a.year, a.weekInYear) - absWeek(b.year, b.weekInYear);
         });
 
         var currentAbs = absWeek(year, weekInYear);
-
-        // Verificar si la celda actual está vacía
         if (findActive(loteId, year, weekInYear)) return false;
 
-        // Buscar si está entre la siembra i y la siembra i+1
         for (var i = 0; i < sorted.length - 1; i++) {
           var p1 = sorted[i];
           var p2 = sorted[i+1];
@@ -294,7 +319,7 @@ html_code = """
           var start2 = absWeek(p2.year, p2.weekInYear);
 
           if (currentAbs > end1 && currentAbs < start2) {
-            var gapSize = start2 - end1 - 1; // Semanas puramente libres
+            var gapSize = start2 - end1 - 1;
             if (gapSize > 4) return true;
           }
         }
@@ -313,7 +338,8 @@ html_code = """
 
       function getTotalHarvestAllFincas(year, weekInYear, targetVeg) {
         var sum = 0;
-        LOTES.forEach(function(l) {
+        var activeLots = getAllActiveLotesFlat();
+        activeLots.forEach(function(l) {
           var list = plantings[l.id] || [];
           list.forEach(function(p) {
             if (!targetVeg || p.vegetal === targetVeg) {
@@ -347,7 +373,7 @@ html_code = """
           };
         });
 
-        var activeLotes = LOTES.filter(function(l){ return l.finca === currentFinca; });
+        var activeLotes = getActiveLotesForFinca(currentFinca);
         var wrap = document.getElementById('gridWrap');
 
         var areaUsoTotal = 0;
@@ -358,7 +384,7 @@ html_code = """
         var tableHtml = '<table class="grid"><thead><tr><th class="corner">Sem.</th><th class="sumhead">' + sumColHeader + '</th>';
         
         activeLotes.forEach(function(l) {
-          tableHtml += '<th class="lotehead">' + l.nombre + '<div class="sub">' + l.area + 'ha</div></th>';
+          tableHtml += '<th class="lotehead" data-lotid="' + l.id + '" title="Clic para partir o gestionar lote">' + l.nombre + '<div class="sub">' + l.area + 'ha</div></th>';
         });
         tableHtml += '</tr></thead><tbody>';
 
@@ -426,6 +452,83 @@ html_code = """
       }
 
       function bindGridEvents() {
+        // Evento para encabezados de lotes (Partir / Unificar)
+        document.querySelectorAll('th.lotehead').forEach(function(th) {
+          th.onclick = function(e) {
+            e.stopPropagation();
+            closePopup();
+
+            var lotId = th.dataset.lotid;
+            // Determinar si es un sub-lote (ej. NP-1A) o base (NP-1)
+            var baseLotId = lotId;
+            var isSub = false;
+            if (lotId.endsWith('A') || lotId.endsWith('B')) {
+              baseLotId = lotId.slice(0, -1);
+              isSub = true;
+            }
+
+            var baseLotObj = BASE_LOTES.find(function(l) { return l.id === baseLotId; });
+            if (!baseLotObj) return;
+
+            var pop = document.createElement('div');
+            pop.className = 'popup';
+
+            var rect = th.getBoundingClientRect();
+            pop.style.left = Math.min(rect.left, window.innerWidth - 180) + 'px';
+            pop.style.top = (rect.bottom + 4) + 'px';
+
+            var titleDiv = document.createElement('div');
+            titleDiv.style.fontWeight = '700';
+            titleDiv.style.marginBottom = '6px';
+            titleDiv.style.fontSize = '11px';
+            titleDiv.style.color = 'var(--forest)';
+            titleDiv.textContent = 'Gestión Lote: ' + lotId;
+            pop.appendChild(titleDiv);
+
+            if (!partitions[baseLotId] && !isSub) {
+              var btnSplit = document.createElement('button');
+              btnSplit.className = 'action-btn';
+              btnSplit.textContent = '✂️ Partir en A y B';
+              btnSplit.onclick = function() {
+                var halfArea = Number((baseLotObj.area / 2).toFixed(2));
+                partitions[baseLotId] = {
+                  parentId: baseLotId,
+                  subA: { id: baseLotId + 'A', area: halfArea },
+                  subB: { id: baseLotId + 'B', area: halfArea }
+                };
+                // Migrar siembras previas al subA por defecto si existen
+                if (plantings[baseLotId]) {
+                  plantings[baseLotId + 'A'] = plantings[baseLotId];
+                  delete plantings[baseLotId];
+                }
+                render();
+              };
+              pop.appendChild(btnSplit);
+            } else {
+              var parentKey = isSub ? baseLotId : lotId;
+              var btnMerge = document.createElement('button');
+              btnMerge.className = 'danger';
+              btnMerge.textContent = '🔗 Unificar / Revertir';
+              btnMerge.onclick = function() {
+                // Combinar siembras de A y B de vuelta al padre
+                var combined = [];
+                if (plantings[parentKey + 'A']) combined = combined.concat(plantings[parentKey + 'A']);
+                if (plantings[parentKey + 'B']) combined = combined.concat(plantings[parentKey + 'B']);
+                
+                plantings[parentKey] = combined;
+                delete plantings[parentKey + 'A'];
+                delete plantings[parentKey + 'B'];
+                delete partitions[parentKey];
+                render();
+              };
+              pop.appendChild(btnMerge);
+            }
+
+            document.body.appendChild(pop);
+            activePopup = pop;
+          };
+        });
+
         var cells = document.querySelectorAll('td.cell');
 
         cells.forEach(function(cell) {
@@ -442,8 +545,8 @@ html_code = """
             pop.className = 'popup';
 
             var rect = cell.getBoundingClientRect();
-            var popWidth = 160;
-            var popHeight = 210;
+            var popWidth = 170;
+            var popHeight = 220;
 
             var left = rect.right + 4;
             if (left + popWidth > window.innerWidth) {
