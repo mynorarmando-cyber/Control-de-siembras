@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — Prototipo V8",
+    page_title="Planificación de Siembras — Prototipo V9",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -133,13 +133,16 @@ html_code = """
 
   <div class="toolbar">
     <div class="tabs" id="fincaTabs"></div>
-    <div class="field">Sumar en Total:
-      <select id="vegFilter"><option value="">Todos los vegetales</option></select>
+    <div class="field">Sumar Resumen:
+      <select id="summaryVegFilter"><option value="">Todos los vegetales</option></select>
     </div>
-    <div class="field">Años a visualizar:
+    <div class="field">Filtrar Lotes:
+      <select id="loteVegFilter"><option value="">Ver Todos</option></select>
+    </div>
+    <div class="field">Años:
       <div class="multi-year-selector" id="yearCheckboxes"></div>
     </div>
-    <div class="stat"><b id="statArea">–</b><span>Área en Uso (ha)</span></div>
+    <div class="stat"><b id="statArea">–</b><span>Área (ha)</span></div>
     <div class="stat"><b id="statProd">–</b><span>Prod. Proyectada</span></div>
     <div style="flex:1"></div>
     <button class="primary" id="exportBtn">Exportar Excel</button>
@@ -195,7 +198,7 @@ function initLotes() {
 initLotes();
 
 const plantings = {};
-plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}, {year: 2026, weekInYear: 48, vegetal: 'Broccoli'}];
+plantings['NP-1'] = [{year: 2026, weekInYear: 1, vegetal: 'Broccoli'}, {year: 2026, weekInYear: 20, vegetal: 'Broccoli'}];
 plantings['CH-1'] = [{year: 2026, weekInYear: 1, vegetal: 'China'}];
 plantings['TM-1'] = [{year: 2026, weekInYear: 2, vegetal: 'China'}];
 plantings['PV-1'] = [{year: 2027, weekInYear: 5, vegetal: 'China'}];
@@ -232,6 +235,23 @@ function hasConflict(loteId, year, weekInYear, vegetal, ignore){
   return false;
 }
 
+// Alerta preventiva cuando se siembra Broccoli de forma consecutiva
+function isConsecutiveBroccoli(loteId, year, weekInYear, vegetal, ignore){
+  if (vegetal !== 'Broccoli') return false;
+  const list = (plantings[loteId] || []).filter(p => p !== ignore);
+  const currentAbs = absWeek(year, weekInYear);
+  
+  // Buscar siembras anteriores en el tiempo
+  const previousPlantings = list
+    .filter(p => absWeek(p.year, p.weekInYear) < currentAbs)
+    .sort((a,b) => absWeek(b.year, b.weekInYear) - absWeek(a.year, a.weekInYear));
+    
+  if (previousPlantings.length > 0 && previousPlantings[0].vegetal === 'Broccoli') {
+    return true;
+  }
+  return false;
+}
+
 function harvestValue(planting, year, weekInYear, area){
   const c = CICLOS[planting.vegetal];
   if (!c) return 0;
@@ -256,10 +276,29 @@ function getTotalHarvestAllFincas(year, weekInYear, targetVeg) {
 }
 
 let currentFinca = 'NP';
-let selectedVegFilter = '';
+let selectedSummaryVeg = '';
+let selectedLoteVeg = '';
 let popupEl = null;
 
 function closePopup(){ if (popupEl){ popupEl.remove(); popupEl=null; } }
+
+function addPlantingWithValidation(loteId, year, weekInYear, veg, existingPlanting = null) {
+  if (hasConflict(loteId, year, weekInYear, veg, existingPlanting)){
+    alert('Existe conflicto con otro cultivo activo en esas semanas.');
+    return false;
+  }
+  if (isConsecutiveBroccoli(loteId, year, weekInYear, veg, existingPlanting)){
+    alert('⚠️ ALERTA DE MONOCULTIVO:\nEstá sembrando BROCCOLI inmediatamente después de un cultivo previo de Broccoli en este lote.');
+  }
+  
+  if (existingPlanting) {
+    existingPlanting.vegetal = veg;
+  } else {
+    plantings[loteId] = plantings[loteId] || [];
+    plantings[loteId].push({year, weekInYear, vegetal: veg});
+  }
+  return true;
+}
 
 function openCellPopup(cellEl, loteId, year, weekInYear, activePlanting){
   closePopup();
@@ -273,13 +312,9 @@ function openCellPopup(cellEl, loteId, year, weekInYear, activePlanting){
     p.querySelectorAll('button').forEach(btn => {
       btn.onclick = () => {
         const veg = btn.dataset.v;
-        if (hasConflict(loteId, year, weekInYear, veg)){
-          alert('Existe conflicto con otro cultivo en esas semanas.');
-          return;
+        if (addPlantingWithValidation(loteId, year, weekInYear, veg)) {
+          closePopup(); render();
         }
-        plantings[loteId] = plantings[loteId] || [];
-        plantings[loteId].push({year, weekInYear, vegetal: veg});
-        closePopup(); render();
       };
     });
   } else {
@@ -300,12 +335,9 @@ function openCellPopup(cellEl, loteId, year, weekInYear, activePlanting){
     p.querySelectorAll('button[data-v]').forEach(btn => {
       btn.onclick = () => {
         const newVeg = btn.dataset.v;
-        if (hasConflict(loteId, activePlanting.year, activePlanting.weekInYear, newVeg, activePlanting)){
-          alert('El nuevo vegetal genera conflicto con otro cultivo activo en este lote.');
-          return;
+        if (addPlantingWithValidation(loteId, activePlanting.year, activePlanting.weekInYear, newVeg, activePlanting)) {
+          closePopup(); render();
         }
-        activePlanting.vegetal = newVeg;
-        closePopup(); render();
       };
     });
   }
@@ -374,7 +406,8 @@ function initYearSelectorUI() {
 }
 
 function render(){
-  selectedVegFilter = document.getElementById('vegFilter').value;
+  selectedSummaryVeg = document.getElementById('summaryVegFilter').value;
+  selectedLoteVeg = document.getElementById('loteVegFilter').value;
 
   const tabsWrap = document.getElementById('fincaTabs');
   tabsWrap.innerHTML = FINCAS.map(f => 
@@ -387,7 +420,7 @@ function render(){
   let areaUsoTotal = 0;
   let prodTotal = 0;
 
-  const sumColHeader = selectedVegFilter ? `Total ${selectedVegFilter} (Todas Fincas)` : 'Total Todos Vegetales';
+  const sumColHeader = selectedSummaryVeg ? `Total ${selectedSummaryVeg} (Todas Fincas)` : 'Total Todos Vegetales';
 
   let tableHtml = `<table class="grid"><thead><tr>
     <th class="corner">Semana</th>
@@ -405,41 +438,46 @@ function render(){
       tableHtml += `<tr class="year-divider"><td colspan="${activeLotes.length + 2}">Año ${year}</td></tr>`;
 
       for (let w = 1; w <= 52; w++) {
-        // La columna de totalización SÍ responde al filtro de vegetal
-        const globalHarvest = getTotalHarvestAllFincas(year, w, selectedVegFilter);
+        // Total Consolidado (Resumen)
+        const globalHarvest = getTotalHarvestAllFincas(year, w, selectedSummaryVeg);
         const globalHarvestTxt = globalHarvest > 0 ? Math.round(globalHarvest).toLocaleString('es-GT') : '-';
 
         tableHtml += `<tr>
           <td class="weekcell">${w}</td>
           <td class="sumcell">${globalHarvestTxt}</td>`;
 
-        // La vista de los lotes NUNCA se oculta para ver todos los vegetales y evitar colisiones
+        // Renderizado de Lotes con su filtro independiente
         activeLotes.forEach(l => {
           const act = findActive(l.id, year, w);
           let cellStyle = '';
           let text = '';
           let isStartCell = false;
+          let isHiddenByLoteFilter = false;
 
           if (act) {
-            cellStyle = getVegetableStyle(act.vegetal);
-            if (act.year === year && act.weekInYear === w) {
-              text = act.vegetal;
-              isStartCell = true;
+            if (selectedLoteVeg && act.vegetal !== selectedLoteVeg) {
+              isHiddenByLoteFilter = true;
+            } else {
+              cellStyle = getVegetableStyle(act.vegetal);
+              if (act.year === year && act.weekInYear === w) {
+                text = act.vegetal;
+                isStartCell = true;
+              }
+              
+              const val = harvestValue(act, year, w, l.area);
+              if (val > 0) {
+                text = Math.round(val/100)/10 + 'k';
+                prodTotal += val;
+              }
+              if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
             }
-            
-            const val = harvestValue(act, year, w, l.area);
-            if (val > 0) {
-              text = Math.round(val/100)/10 + 'k';
-              prodTotal += val;
-            }
-            if (w === 1 || (act.year === year && act.weekInYear === w)) areaUsoTotal += l.area;
           }
 
-          const draggableAttr = isStartCell ? 'draggable="true"' : '';
-          const draggableClass = isStartCell ? 'draggable' : '';
+          const draggableAttr = (isStartCell && !isHiddenByLoteFilter) ? 'draggable="true"' : '';
+          const draggableClass = (isStartCell && !isHiddenByLoteFilter) ? 'draggable' : '';
 
-          tableHtml += `<td class="cell ${act?'planted':''} ${draggableClass}" ${draggableAttr} style="${cellStyle}" data-lote="${l.id}" data-year="${year}" data-week="${w}">
-            ${text}
+          tableHtml += `<td class="cell ${act && !isHiddenByLoteFilter?'planted':''} ${draggableClass}" ${draggableAttr} style="${cellStyle}" data-lote="${l.id}" data-year="${year}" data-week="${w}">
+            ${isHiddenByLoteFilter ? '' : text}
           </td>`;
         });
 
@@ -502,6 +540,10 @@ function render(){
         return;
       }
 
+      if (isConsecutiveBroccoli(loteId, year, week, planting.vegetal, planting)) {
+        alert('⚠️ ALERTA DE MONOCULTIVO:\nMoviendo BROCCOLI inmediatamente después de otro cultivo de Broccoli en este lote.');
+      }
+
       planting.year = year;
       planting.weekInYear = week;
       dragSource = null;
@@ -510,10 +552,16 @@ function render(){
   });
 }
 
-document.getElementById('vegFilter').innerHTML = '<option value="">Todos los vegetales</option>' + 
+// Llenar selectores de vegetales
+const optionsVeg = '<option value="">Todos los vegetales</option>' + 
   VEG_ORDER.map(v => `<option value="${v}">${v}</option>`).join('');
 
-document.getElementById('vegFilter').onchange = render;
+document.getElementById('summaryVegFilter').innerHTML = optionsVeg;
+document.getElementById('loteVegFilter').innerHTML = '<option value="">Ver Todos</option>' + 
+  VEG_ORDER.map(v => `<option value="${v}">${v}</option>`).join('');
+
+document.getElementById('summaryVegFilter').onchange = render;
+document.getElementById('loteVegFilter').onchange = render;
 document.getElementById('splitBtn').onclick = openSplitModal;
 
 document.getElementById('exportBtn').onclick = () => {
