@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Planificación de Siembras — V10.12",
+    page_title="Planificación de Siembras — V11.0",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -134,13 +134,12 @@ html_code = """
   .popup button:disabled { opacity: 0.4; cursor: not-allowed; }
   .popup .danger { color: var(--alert); font-weight:700; border-bottom:1px solid var(--line); margin-bottom:4px; padding-bottom:4px; }
   .popup .msg-occupied { font-size: 10px; color: var(--alert); padding: 4px 6px; font-weight: 600; text-align: center; background: #fbeae8; border-radius: 4px; margin-bottom: 4px; }
-  .popup .msg-warning { font-size: 9.5px; color: #856404; background: #fff3cd; border: 1px solid #ffeeba; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; text-align: center; font-weight: 500; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Planificación de Siembras — V10.12 (NP 40 lotes, Brechas > 5 sem, Alerta Brócoli)</h1>
+    <h1>Planificación de Siembras — V11.0 (Rendimientos Reales Excel & Época Fría)</h1>
   </header>
 
   <div class="toolbar">
@@ -195,12 +194,37 @@ html_code = """
       var AVAILABLE_YEARS = [2025, 2026, 2027, 2028];
       var selectedYears = [2026, 2027];
 
+      // Curvas de rendimiento semanal reales por vegetal (basadas en Siesa Plan.xlsx)
+      var RENDIMIENTOS_SEMANALES = {
+        Ejote: {
+          1:10900, 2:10900, 3:10900, 4:10900, 5:10900, 6:10900, 7:10900, 8:10900, 9:10900,
+          10:11900, 11:11900, 12:11900, 13:11900, 14:11900, 15:11900, 16:11900, 17:11900, 18:11900, 19:11900, 20:11900, 21:11900, 22:11900, 23:11900, 24:11900, 25:11900, 26:11900, 27:11900,
+          28:11600, 29:11600, 30:11600, 31:11600, 32:11600, 33:11600, 34:11600, 35:11600, 36:11600, 37:11600, 38:11600, 39:11600, 40:11600, 41:11600, 42:11600, 43:11600, 44:11600,
+          45:10900, 46:10900, 47:10900, 48:10900, 49:10900, 50:10900, 51:10900, 52:10900, 53:10900
+        },
+        Broccoli: {
+          1:8000, 2:8000, 3:8000, 4:8000, 5:8000, 6:8000, 7:8000, 8:8000, 9:8000,
+          10:10000, 11:10000, 12:10000, 13:10000, 14:10000, 15:10000, 16:10000, 17:10000, 18:10000, 19:10000, 20:10000, 21:10000, 22:10000, 23:10000, 24:10000, 25:10000, 26:10000, 27:10000,
+          28:6500, 29:6500, 30:6500, 31:6500, 32:6500, 33:6500, 34:6500, 35:6500, 36:6500, 37:6500, 38:6500, 39:6500, 40:6500, 41:6500, 42:6500, 43:6500, 44:6500,
+          45:8000, 46:8000, 47:8000, 48:8000, 49:8000, 50:8000, 51:8000, 52:8000, 53:8000
+        },
+        China: {
+          1:7500, 2:7500, 3:7500, 4:7500, 5:7500, 6:7500, 7:7500, 8:7500, 9:7500, 10:7500, 11:7500, 12:7500, 13:7500, 14:7500, 15:7500, 16:7500, 17:7500, 18:7500, 19:7500, 20:7500, 21:7500, 22:7500, 23:7500, 24:7500, 25:7500, 26:7500, 27:7500, 28:7500, 29:7500, 30:7500, 31:7500, 32:7500, 33:7500, 34:7500, 35:7500, 36:7500, 37:7500, 38:7500, 39:7500, 40:7500, 41:7500, 42:7500, 43:7500, 44:7500, 45:7500, 46:7500, 47:7500, 48:7500, 49:7500, 50:7500, 51:7500, 52:7500, 53:7500
+        },
+        Dulce: {
+          1:12000, 2:12000, 3:12000, 4:12000, 5:12000, 6:10000, 7:10000, 8:10000, 9:10000, 10:10000, 11:10000, 12:10000, 13:10000, 14:10000, 15:7000, 16:7000, 17:7000, 18:7000, 19:7000, 20:7000, 21:7000, 22:7000, 23:7000, 24:7000, 25:7000, 26:7000, 27:7000, 28:7000, 29:7000, 30:7000, 31:7000, 32:7000, 33:7000, 34:7000, 35:7000, 36:7000, 37:7000, 38:10500, 39:10500, 40:10500, 41:10500, 42:10500, 43:10500, 44:10500, 45:10500, 46:10500, 47:10500, 48:10500, 49:10500, 50:10500, 51:10500, 52:10500, 53:10500
+        },
+        Grano: {
+          1:8250, 2:8250, 3:8250, 4:8250, 5:8250, 6:8250, 7:8250, 8:8250, 9:8250, 10:8250, 11:8250, 12:8250, 13:8250, 14:8250, 15:8250, 16:8250, 17:8250, 18:8250, 19:8250, 20:8250, 21:8250, 22:8250, 23:8250, 24:8250, 25:8250, 26:8250, 27:8250, 28:8250, 29:8250, 30:8250, 31:8250, 32:8250, 33:8250, 34:8250, 35:8250, 36:8250, 37:8250, 38:8250, 39:8250, 40:8250, 41:8250, 42:8250, 43:8250, 44:8250, 45:8250, 46:8250, 47:8250, 48:8250, 49:8250, 50:8250, 51:8250, 52:8250, 53:8250
+        }
+      };
+
       var CICLOS = {
-        Ejote:    { duracion: 12, cosechas: [[10,0.35],[11,0.42],[12,0.23]], rendimiento: 11500, color:'ejote' },
-        Broccoli: { duracion: 15, cosechas: [[10,0.10],[11,0.20],[12,0.17],[13,0.10],[14,0.23],[15,0.20]], rendimiento: 8000, color:'broccoli' },
-        Grano:    { duracion: 14, cosechas: [[11,0.30],[12,0.36],[13,0.24],[14,0.10]], rendimiento: 8500, color:'grano' },
-        China:    { duracion: 13, cosechas: [[10,0.11],[11,0.45],[12,0.37],[13,0.07]], rendimiento: 7500, color:'china' },
-        Dulce:    { duracion: 14, cosechas: [[11,0.10],[12,0.20],[13,0.41],[14,0.29]], rendimiento: 10000, color:'dulce' }
+        Ejote:    { duracionBase: 11, cosechas: [[10,0.35],[11,0.42],[12,0.23]], color:'ejote' },
+        Broccoli: { duracionBase: 15, cosechas: [[10,0.10],[11,0.20],[12,0.17],[13,0.10],[14,0.23],[15,0.20]], color:'broccoli' },
+        Grano:    { duracionBase: 14, cosechas: [[11,0.30],[12,0.36],[13,0.24],[14,0.10]], color:'grano' },
+        China:    { duracionBase: 13, cosechas: [[10,0.11],[11,0.45],[12,0.37],[13,0.07]], color:'china' },
+        Dulce:    { duracionBase: 14, cosechas: [[11,0.10],[12,0.20],[13,0.41],[14,0.29]], color:'dulce' }
       };
 
       function getVegetableStyle(vegName) {
@@ -249,6 +273,24 @@ html_code = """
         return (year - 2020) * 52 + weekInYear;
       }
 
+      // Evaluar si una semana cae en época fría (Semanas >= 45 o <= 8 por defecto, ajustable)
+      function isColdSeason(weekInYear) {
+        return (weekInYear >= 45 || weekInYear <= 8);
+      }
+
+      // Duración dinámica para el Ejote (si la siembra o cosecha cae en época fría, se alarga 1 semana más)
+      function getCycleDuration(vegetal, startYear, startWeek) {
+        var base = CICLOS[vegetal].duracionBase;
+        if (vegetal === 'Ejote') {
+          var endWeekApprox = startWeek + base - 1;
+          var normEndWeek = ((endWeekApprox - 1) % 52) + 1;
+          if (isColdSeason(startWeek) || isColdSeason(normEndWeek)) {
+            return base + 1; // Se alarga 1 semana en época fría
+          }
+        }
+        return base;
+      }
+
       function getActiveLotesForFinca(fincaName) {
         var result = [];
         var fincaBase = BASE_LOTES.filter(function(l) { return l.finca === fincaName; });
@@ -278,10 +320,9 @@ html_code = """
         var currentAbs = absWeek(year, weekInYear);
         for (var i = 0; i < list.length; i++){
           var p = list[i];
-          var c = CICLOS[p.vegetal];
-          if (!c) continue;
+          var dur = getCycleDuration(p.vegetal, p.year, p.weekInYear);
           var startAbs = absWeek(p.year, p.weekInYear);
-          if (currentAbs >= startAbs && currentAbs < startAbs + c.duracion) return p;
+          if (currentAbs >= startAbs && currentAbs < startAbs + dur) return p;
         }
         return null;
       }
@@ -308,7 +349,6 @@ html_code = """
         return null;
       }
 
-      // Evaluar si una semana vacía tiene más de 5 semanas de inactividad respecto a la siembra anterior en el mismo espacio
       function isLongGap(loteId, year, weekInYear) {
         var currentAbs = absWeek(year, weekInYear);
         var checkIds = [loteId];
@@ -327,15 +367,14 @@ html_code = """
 
         if (allPlantings.length === 0) return false;
 
-        // Ordenar por tiempo absoluto
         allPlantings.sort(function(a, b) {
           return absWeek(a.year, a.weekInYear) - absWeek(b.year, b.weekInYear);
         });
 
-        // Buscar si esta semana está entre el final de una siembra y el inicio de la siguiente
         for (var i = 0; i < allPlantings.length - 1; i++) {
           var p1 = allPlantings[i];
-          var end1 = absWeek(p1.year, p1.weekInYear) + CICLOS[p1.vegetal].duracion - 1;
+          var dur1 = getCycleDuration(p1.vegetal, p1.year, p1.weekInYear);
+          var end1 = absWeek(p1.year, p1.weekInYear) + dur1 - 1;
           var p2 = allPlantings[i+1];
           var start2 = absWeek(p2.year, p2.weekInYear);
 
@@ -347,7 +386,6 @@ html_code = """
         return false;
       }
 
-      // Encontrar si el ciclo anterior inmediato en este espacio fue Brócoli
       function isBroccoliAfterBroccoli(loteId, year, weekInYear, ignorePlanting) {
         var startAbs = absWeek(year, weekInYear);
         var checkIds = [loteId];
@@ -373,11 +411,11 @@ html_code = """
           return absWeek(a.year, a.weekInYear) - absWeek(b.year, b.weekInYear);
         });
 
-        // Encontrar la última siembra que termina antes o justo antes de esta nueva fecha
         var lastEndingBefore = null;
         for (var i = 0; i < allPlantings.length; i++) {
           var p = allPlantings[i];
-          var endAbs = absWeek(p.year, p.weekInYear) + CICLOS[p.vegetal].duracion - 1;
+          var dur = getCycleDuration(p.vegetal, p.year, p.weekInYear);
+          var endAbs = absWeek(p.year, p.weekInYear) + dur - 1;
           if (endAbs <= startAbs) {
             lastEndingBefore = p;
           }
@@ -390,18 +428,15 @@ html_code = """
       }
 
       function canPlant(loteId, year, weekInYear, vegName, ignorePlanting) {
-        var cycle = CICLOS[vegName];
-        if (!cycle) return false;
-
+        var dur = getCycleDuration(vegName, year, weekInYear);
         var startAbs = absWeek(year, weekInYear);
-        var endAbs = startAbs + cycle.duracion - 1;
+        var endAbs = startAbs + dur - 1;
 
         var checkIds = [loteId];
         if (!loteId.endsWith('A') && !loteId.endsWith('B')) {
           checkIds.push(loteId + 'A', loteId + 'B');
         } else if (loteId.endsWith('A') || loteId.endsWith('B')) {
-          var baseId = loteId.slice(0, -1);
-          checkIds.push(baseId);
+          checkIds.push(loteId.slice(0, -1));
         }
 
         for (var r = 0; r < checkIds.length; r++) {
@@ -412,7 +447,8 @@ html_code = """
             if (ignorePlanting && p === ignorePlanting && checkId === loteId) continue;
 
             var existingStart = absWeek(p.year, p.weekInYear);
-            var existingEnd = existingStart + CICLOS[p.vegetal].duracion - 1;
+            var existingDur = getCycleDuration(p.vegetal, p.year, p.weekInYear);
+            var existingEnd = existingStart + existingDur - 1;
 
             if (startAbs <= existingEnd && endAbs >= existingStart) {
               return false;
@@ -428,8 +464,18 @@ html_code = """
         var currentAbs = absWeek(year, weekInYear);
         var startAbs = absWeek(planting.year, planting.weekInYear);
         var rel = currentAbs - startAbs + 1;
+        
         var cosecha = c.cosechas.find(function(item){ return item[0] === rel; });
-        return cosecha ? area * c.rendimiento * cosecha[1] : 0;
+        if (!cosecha) return 0;
+
+        var factorPorcentaje = cosecha[1];
+        
+        // Obtener la semana del año calendario real en la que ocurre esta cosecha específica
+        var calendarWeek = ((weekInYear - 1) % 52) + 1;
+        var vegRendDict = RENDIMIENTOS_SEMANALES[planting.vegetal];
+        var rendimientoSemanalBase = vegRendDict ? (vegRendDict[calendarWeek] || 8000) : 8000;
+
+        return area * rendimientoSemanalBase * factorPorcentaje;
       }
 
       function getTotalHarvestAllFincas(year, weekInYear, targetVeg) {
